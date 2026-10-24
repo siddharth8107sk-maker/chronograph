@@ -1,0 +1,2760 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>ChronoGraph — Real-Time Event Scheduling System</title>
+  <meta name="description" content="ChronoGraph real-time event scheduler powered by persistent gap-augmented AVL trees, conflict ripple graphs, and algorithm benchmarks.">
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500;600&display=swap" rel="stylesheet">
+  <style>
+    :root {
+      --bg: #F6F7F9;
+      --surface: #FFFFFF;
+      --border: #E5E7EB;
+      --border-focus: #2563EB;
+      --text: #111827;
+      --text-muted: #6B7280;
+      --primary: #2563EB;
+      --primary-hover: #1D4ED8;
+      --primary-light: #EFF6FF;
+      --success: #16A34A;
+      --success-light: #DCFCE7;
+      --warning: #D97706;
+      --warning-light: #FEF3C7;
+      --danger: #DC2626;
+      --danger-light: #FEE2E2;
+
+      /* Fixed 6 soft venue colors */
+      --venue-0: #EEF2FF; --venue-border-0: #6366F1; --venue-text-0: #3730A3;
+      --venue-1: #ECFDF5; --venue-border-1: #10B981; --venue-text-1: #065F46;
+      --venue-2: #FFFBEB; --venue-border-2: #F59E0B; --venue-text-2: #92400E;
+      --venue-3: #FFF1F2; --venue-border-3: #F43F5E; --venue-text-3: #9F1239;
+      --venue-4: #F0F9FF; --venue-border-4: #0EA5E9; --venue-text-4: #075985;
+      --venue-5: #F5F3FF; --venue-border-5: #8B5CF6; --venue-text-5: #5B21B6;
+
+      --radius: 12px;
+      --shadow-sm: 0 1px 3px rgba(0, 0, 0, 0.05);
+      --shadow-md: 0 4px 6px -1px rgba(0, 0, 0, 0.07), 0 2px 4px -2px rgba(0, 0, 0, 0.05);
+      --font-main: 'Inter', -apple-system, BlinkMacSystemFont, sans-serif;
+      --font-mono: 'JetBrains Mono', monospace;
+    }
+
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+    body {
+      font-family: var(--font-main);
+      background-color: var(--bg);
+      color: var(--text);
+      font-size: 14px;
+      line-height: 1.5;
+      -webkit-font-smoothing: antialiased;
+      min-height: 100vh;
+      display: flex;
+      flex-direction: column;
+    }
+
+    a { color: var(--primary); text-decoration: none; }
+    a:hover { text-decoration: underline; }
+    button, input, select, textarea { font-family: inherit; font-size: 14px; }
+
+    /* Mono utility */
+    .mono { font-family: var(--font-mono); }
+
+    /* Navigation Bar */
+    header.navbar {
+      background: var(--surface);
+      border-bottom: 1px solid var(--border);
+      position: sticky;
+      top: 0;
+      z-index: 100;
+      box-shadow: var(--shadow-sm);
+    }
+    .nav-container {
+      max-width: 1180px;
+      margin: 0 auto;
+      padding: 0 20px;
+      height: 64px;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+    }
+    .brand-logo {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      font-weight: 700;
+      font-size: 18px;
+      color: var(--text);
+      text-decoration: none;
+    }
+    .brand-badge {
+      font-size: 11px;
+      font-weight: 600;
+      background: var(--primary-light);
+      color: var(--primary);
+      padding: 2px 8px;
+      border-radius: 999px;
+      font-family: var(--font-mono);
+    }
+    nav.nav-links {
+      display: flex;
+      align-items: center;
+      gap: 6px;
+    }
+    nav.nav-links a.nav-item {
+      padding: 8px 14px;
+      border-radius: 8px;
+      font-weight: 500;
+      color: var(--text-muted);
+      text-decoration: none;
+      transition: all 0.15s ease;
+    }
+    nav.nav-links a.nav-item:hover {
+      background: var(--bg);
+      color: var(--text);
+      text-decoration: none;
+    }
+    nav.nav-links a.nav-item.active {
+      background: var(--primary-light);
+      color: var(--primary);
+      font-weight: 600;
+    }
+
+    .user-profile {
+      position: relative;
+      display: flex;
+      align-items: center;
+      gap: 12px;
+    }
+    .user-btn {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      background: transparent;
+      border: 1px solid var(--border);
+      padding: 6px 12px;
+      border-radius: 8px;
+      cursor: pointer;
+      font-weight: 500;
+    }
+    .user-btn:hover { background: var(--bg); }
+    .dropdown-menu {
+      position: absolute;
+      right: 0;
+      top: calc(100% + 8px);
+      background: var(--surface);
+      border: 1px solid var(--border);
+      border-radius: 8px;
+      box-shadow: var(--shadow-md);
+      min-width: 160px;
+      display: none;
+      flex-direction: column;
+      padding: 4px;
+      z-index: 101;
+    }
+    .dropdown-menu.show { display: flex; }
+    .dropdown-item {
+      padding: 8px 12px;
+      text-align: left;
+      background: transparent;
+      border: none;
+      cursor: pointer;
+      border-radius: 6px;
+      color: var(--danger);
+      font-weight: 500;
+      display: flex;
+      align-items: center;
+      gap: 8px;
+    }
+    .dropdown-item:hover { background: var(--danger-light); }
+
+    /* Main Container */
+    main#app {
+      flex: 1;
+      max-width: 1180px;
+      width: 100%;
+      margin: 24px auto;
+      padding: 0 20px;
+    }
+
+    /* Cards & Layout */
+    .card {
+      background: var(--surface);
+      border: 1px solid var(--border);
+      border-radius: var(--radius);
+      box-shadow: var(--shadow-sm);
+      padding: 24px;
+      margin-bottom: 24px;
+    }
+    .page-header {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      margin-bottom: 24px;
+      flex-wrap: wrap;
+      gap: 16px;
+    }
+    .page-header h1 {
+      font-size: 24px;
+      font-weight: 700;
+      color: var(--text);
+    }
+    .page-header p {
+      color: var(--text-muted);
+      font-size: 14px;
+      margin-top: 4px;
+    }
+
+    /* Buttons */
+    .btn {
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      gap: 6px;
+      padding: 8px 16px;
+      border-radius: 8px;
+      font-weight: 500;
+      border: 1px solid transparent;
+      cursor: pointer;
+      transition: background 0.15s, border-color 0.15s;
+    }
+    .btn-primary { background: var(--primary); color: #fff; }
+    .btn-primary:hover { background: var(--primary-hover); }
+    .btn-secondary { background: var(--surface); border-color: var(--border); color: var(--text); }
+    .btn-secondary:hover { background: var(--bg); }
+    .btn-danger { background: var(--danger); color: #fff; }
+    .btn-danger:hover { background: #B91C1C; }
+    .btn-sm { padding: 4px 10px; font-size: 13px; }
+    .btn:disabled { opacity: 0.6; cursor: not-allowed; }
+
+    /* Form Inputs */
+    .form-group {
+      margin-bottom: 16px;
+    }
+    .form-label {
+      display: block;
+      font-weight: 500;
+      font-size: 13px;
+      margin-bottom: 6px;
+      color: var(--text);
+    }
+    .form-control {
+      width: 100%;
+      padding: 8px 12px;
+      border: 1px solid var(--border);
+      border-radius: 8px;
+      background: var(--surface);
+      color: var(--text);
+      outline: none;
+      transition: border-color 0.15s;
+    }
+    .form-control:focus {
+      border-color: var(--border-focus);
+      box-shadow: 0 0 0 3px rgba(37, 99, 235, 0.1);
+    }
+    .input-error {
+      color: var(--danger);
+      font-size: 12px;
+      margin-top: 4px;
+    }
+
+    /* Grid helpers */
+    .grid-2 { display: grid; grid-template-columns: 1fr 1fr; gap: 20px; }
+    .grid-3 { display: grid; grid-template-columns: repeat(3, 1fr); gap: 20px; }
+    .grid-4 { display: grid; grid-template-columns: repeat(4, 1fr); gap: 16px; }
+
+    /* Stat Cards */
+    .stat-card {
+      background: var(--surface);
+      border: 1px solid var(--border);
+      border-radius: var(--radius);
+      padding: 20px;
+      box-shadow: var(--shadow-sm);
+    }
+    .stat-title {
+      font-size: 13px;
+      font-weight: 500;
+      color: var(--text-muted);
+      margin-bottom: 6px;
+    }
+    .stat-value {
+      font-size: 28px;
+      font-weight: 700;
+      color: var(--text);
+      font-family: var(--font-mono);
+    }
+    .stat-sub {
+      font-size: 12px;
+      color: var(--text-muted);
+      margin-top: 4px;
+    }
+
+    /* Tables */
+    .table-container {
+      width: 100%;
+      overflow-x: auto;
+    }
+    table.data-table {
+      width: 100%;
+      border-collapse: collapse;
+      text-align: left;
+    }
+    table.data-table th {
+      padding: 12px 14px;
+      background: #F9FAFB;
+      border-bottom: 1px solid var(--border);
+      font-size: 12px;
+      font-weight: 600;
+      color: var(--text-muted);
+      text-transform: uppercase;
+      letter-spacing: 0.05em;
+    }
+    table.data-table td {
+      padding: 12px 14px;
+      border-bottom: 1px solid var(--border);
+      font-size: 13px;
+    }
+    table.data-table tr:hover td {
+      background: #FAFAFC;
+    }
+
+    /* Badges */
+    .badge {
+      display: inline-flex;
+      align-items: center;
+      gap: 4px;
+      padding: 2px 8px;
+      border-radius: 999px;
+      font-size: 12px;
+      font-weight: 500;
+    }
+    .badge-primary { background: var(--primary-light); color: var(--primary); }
+    .badge-success { background: var(--success-light); color: var(--success); }
+    .badge-warning { background: var(--warning-light); color: var(--warning); }
+    .badge-danger { background: var(--danger-light); color: var(--danger); }
+    .badge-outline { background: transparent; border: 1px solid var(--border); color: var(--text-muted); }
+
+    /* Modals */
+    .modal-overlay {
+      position: fixed;
+      inset: 0;
+      background: rgba(17, 24, 39, 0.4);
+      backdrop-filter: blur(2px);
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      z-index: 200;
+      opacity: 0;
+      pointer-events: none;
+      transition: opacity 0.2s ease;
+    }
+    .modal-overlay.open {
+      opacity: 1;
+      pointer-events: auto;
+    }
+    .modal-box {
+      background: var(--surface);
+      border-radius: var(--radius);
+      width: 100%;
+      max-width: 540px;
+      max-height: 90vh;
+      overflow-y: auto;
+      box-shadow: var(--shadow-md);
+      border: 1px solid var(--border);
+      padding: 24px;
+      position: relative;
+    }
+    .modal-header {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      margin-bottom: 20px;
+    }
+    .modal-header h3 { font-size: 18px; font-weight: 600; }
+    .modal-close {
+      background: transparent;
+      border: none;
+      font-size: 20px;
+      cursor: pointer;
+      color: var(--text-muted);
+    }
+    .modal-close:hover { color: var(--text); }
+
+    /* Schedule Week Grid */
+    .schedule-toolbar {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      margin-bottom: 16px;
+      flex-wrap: wrap;
+      gap: 12px;
+    }
+    .version-indicator {
+      display: inline-flex;
+      align-items: center;
+      gap: 8px;
+      font-size: 13px;
+      font-family: var(--font-mono);
+      background: #F3F4F6;
+      padding: 4px 10px;
+      border-radius: 6px;
+      border: 1px solid var(--border);
+    }
+    .timeline-container {
+      overflow-x: auto;
+      border: 1px solid var(--border);
+      border-radius: var(--radius);
+      background: var(--surface);
+    }
+    .timeline-grid {
+      display: grid;
+      grid-template-columns: 80px repeat(7, minmax(140px, 1fr));
+      min-width: 1060px;
+      position: relative;
+    }
+    .timeline-header-cell {
+      padding: 12px;
+      background: #F9FAFB;
+      border-bottom: 1px solid var(--border);
+      border-right: 1px solid var(--border);
+      text-align: center;
+      font-weight: 600;
+      font-size: 13px;
+    }
+    .timeline-time-col {
+      border-right: 1px solid var(--border);
+      background: #FAFAFC;
+    }
+    .timeline-time-slot {
+      height: 52px;
+      padding: 4px 8px;
+      border-bottom: 1px dashed #E5E7EB;
+      font-size: 11px;
+      font-family: var(--font-mono);
+      color: var(--text-muted);
+      text-align: right;
+    }
+    .timeline-day-col {
+      position: relative;
+      border-right: 1px solid var(--border);
+      height: calc(12 * 52px); /* 8:00 to 20:00 (12 hours) */
+      background: repeating-linear-gradient(
+        0deg,
+        transparent,
+        transparent 51px,
+        #F3F4F6 51px,
+        #F3F4F6 52px
+      );
+    }
+    .event-block {
+      position: absolute;
+      left: 4px;
+      right: 4px;
+      border-radius: 6px;
+      padding: 4px 8px;
+      font-size: 11px;
+      line-height: 1.3;
+      cursor: pointer;
+      overflow: hidden;
+      box-shadow: 0 1px 2px rgba(0,0,0,0.08);
+      transition: transform 0.1s, box-shadow 0.1s;
+      border-left: 3px solid;
+    }
+    .event-block:hover {
+      transform: translateY(-1px);
+      box-shadow: 0 4px 6px rgba(0,0,0,0.12);
+      z-index: 10;
+    }
+    .event-block.conflicted {
+      outline: 2px solid var(--danger);
+      outline-offset: -1px;
+    }
+    .event-block-title {
+      font-weight: 600;
+      white-space: nowrap;
+      overflow: hidden;
+      text-overflow: ellipsis;
+    }
+    .event-block-time {
+      font-family: var(--font-mono);
+      font-size: 10px;
+      opacity: 0.85;
+    }
+
+    /* Toast notifications */
+    #toast-container {
+      position: fixed;
+      bottom: 24px;
+      right: 24px;
+      z-index: 999;
+      display: flex;
+      flex-direction: column;
+      gap: 10px;
+    }
+    .toast {
+      background: var(--surface);
+      color: var(--text);
+      padding: 12px 18px;
+      border-radius: 8px;
+      border: 1px solid var(--border);
+      box-shadow: var(--shadow-md);
+      font-size: 13px;
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      min-width: 280px;
+      animation: slideIn 0.2s ease-out;
+    }
+    .toast-success { border-left: 4px solid var(--success); }
+    .toast-error { border-left: 4px solid var(--danger); }
+    .toast-info { border-left: 4px solid var(--primary); }
+    @keyframes slideIn {
+      from { transform: translateX(100%); opacity: 0; }
+      to { transform: translateX(0); opacity: 1; }
+    }
+
+    /* Autocomplete dropdown */
+    .autocomplete-wrapper { position: relative; width: 100%; }
+    .autocomplete-list {
+      position: absolute;
+      top: 100%;
+      left: 0;
+      right: 0;
+      background: var(--surface);
+      border: 1px solid var(--border);
+      border-radius: 8px;
+      box-shadow: var(--shadow-md);
+      z-index: 50;
+      max-height: 200px;
+      overflow-y: auto;
+      display: none;
+      margin-top: 4px;
+    }
+    .autocomplete-item {
+      padding: 8px 12px;
+      cursor: pointer;
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+    }
+    .autocomplete-item:hover { background: var(--bg); }
+
+    /* SVG Canvas Styles */
+    .svg-canvas-container {
+      background: #FAFAFC;
+      border: 1px solid var(--border);
+      border-radius: var(--radius);
+      position: relative;
+      overflow: hidden;
+      width: 100%;
+      min-height: 520px;
+    }
+    svg.graph-svg {
+      width: 100%;
+      height: 520px;
+      display: block;
+    }
+
+    /* Tree Node styles */
+    .tree-node circle {
+      stroke-width: 2;
+      transition: fill 0.2s, stroke 0.2s, r 0.2s;
+      cursor: pointer;
+    }
+    .tree-node text {
+      font-family: var(--font-mono);
+      font-size: 10px;
+      text-anchor: middle;
+      dominant-baseline: central;
+      pointer-events: none;
+      font-weight: 500;
+    }
+    .tree-edge {
+      stroke: #CBD5E1;
+      stroke-width: 1.5;
+      fill: none;
+    }
+    .traversal-highlight {
+      stroke: #F59E0B !important;
+      stroke-width: 4 !important;
+      fill: #FEF3C7 !important;
+    }
+
+    /* Responsive */
+    @media (max-width: 768px) {
+      .grid-2, .grid-3, .grid-4 { grid-template-columns: 1fr; }
+      nav.nav-links { display: none; }
+      nav.nav-links.open {
+        display: flex;
+        flex-direction: column;
+        position: absolute;
+        top: 64px;
+        left: 0;
+        right: 0;
+        background: var(--surface);
+        border-bottom: 1px solid var(--border);
+        padding: 12px 20px;
+      }
+      .mobile-menu-btn { display: block !important; }
+    }
+    .mobile-menu-btn { display: none; background: transparent; border: none; font-size: 20px; cursor: pointer; }
+  </style>
+</head>
+<body>
+
+  <!-- Top Navbar -->
+  <header class="navbar">
+    <div class="nav-container">
+      <div style="display:flex; align-items:center; gap:16px;">
+        <button class="mobile-menu-btn" onclick="toggleMobileNav()" aria-label="Toggle navigation">☰</button>
+        <a href="#/dashboard" class="brand-logo">
+          <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="#2563EB" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round">
+            <circle cx="12" cy="12" r="10"></circle>
+            <polyline points="12 6 12 12 16 14"></polyline>
+          </svg>
+          <span>ChronoGraph</span>
+          <span class="brand-badge">25CS306 MP-01</span>
+        </a>
+      </div>
+
+      <nav class="nav-links" id="main-nav-links">
+        <a href="#/dashboard" class="nav-item" id="nav-dashboard">Dashboard</a>
+        <a href="#/events" class="nav-item" id="nav-events">Events</a>
+        <a href="#/schedule" class="nav-item" id="nav-schedule">Schedule</a>
+        <a href="#/conflicts" class="nav-item" id="nav-conflicts">Conflicts</a>
+        <a href="#/tree" class="nav-item" id="nav-tree">Tree</a>
+        <a href="#/benchmarks" class="nav-item" id="nav-benchmarks">Benchmarks</a>
+      </nav>
+
+      <div class="user-profile" id="user-profile-section">
+        <button class="user-btn" onclick="toggleUserDropdown()" id="user-display-name">
+          <span id="user-name-text">Account</span>
+          <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="6 9 12 15 18 9"></polyline></svg>
+        </button>
+        <div class="dropdown-menu" id="user-dropdown">
+          <button class="dropdown-item" onclick="handleSignOut()">
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4"></path><polyline points="16 17 21 12 16 7"></polyline><line x1="21" y1="12" x2="9" y2="12"></line></svg>
+            Sign out
+          </button>
+        </div>
+      </div>
+    </div>
+  </header>
+
+  <!-- App Main Content Area -->
+  <main id="app">
+    <div id="loading-spinner" style="text-align:center; padding: 60px 0; color: var(--text-muted);">
+      <svg width="32" height="32" viewBox="0 0 24 24" fill="none" stroke="#2563EB" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="animation: spin 1s linear infinite;"><line x1="12" y1="2" x2="12" y2="6"></line><line x1="12" y1="18" x2="12" y2="22"></line><line x1="4.93" y1="4.93" x2="7.76" y2="7.76"></line><line x1="16.24" y1="16.24" x2="19.07" y2="19.07"></line><line x1="2" y1="12" x2="6" y2="12"></line><line x1="18" y1="12" x2="22" y2="12"></line><line x1="4.93" y1="19.07" x2="7.76" y2="16.24"></line><line x1="16.24" y1="7.76" x2="19.07" y2="4.93"></line></svg>
+      <div style="margin-top:12px; font-weight:500;">Loading ChronoGraph...</div>
+    </div>
+    <div id="page-content"></div>
+  </main>
+
+  <!-- Modals & Toasts -->
+  <div id="toast-container" aria-live="polite"></div>
+
+  <!-- Add Event Modal -->
+  <div class="modal-overlay" id="add-event-modal" onclick="handleModalBackdropClick(event, 'add-event-modal')">
+    <div class="modal-box">
+      <div class="modal-header">
+        <h3>Create New Event</h3>
+        <button class="modal-close" onclick="closeModal('add-event-modal')">&times;</button>
+      </div>
+      <form id="add-event-form" onsubmit="submitAddEvent(event)">
+        <div class="form-group">
+          <label class="form-label" for="add-title">Event Title</label>
+          <input type="text" id="add-title" class="form-control" placeholder="e.g. ACM Guest Lecture" required>
+        </div>
+        <div class="grid-2">
+          <div class="form-group">
+            <label class="form-label" for="add-date">Date</label>
+            <input type="date" id="add-date" class="form-control" value="2026-10-26" required onchange="triggerConflictCheck()">
+          </div>
+          <div class="form-group">
+            <label class="form-label" for="add-venue">Venue</label>
+            <select id="add-venue" class="form-control" required>
+              <option value="Main Auditorium">Main Auditorium</option>
+              <option value="Block C Seminar Hall">Block C Seminar Hall</option>
+              <option value="CSE Lab 2">CSE Lab 2</option>
+              <option value="Open Air Theatre">Open Air Theatre</option>
+            </select>
+          </div>
+        </div>
+        <div class="grid-2">
+          <div class="form-group">
+            <label class="form-label" for="add-st">Start Time</label>
+            <input type="time" id="add-st" class="form-control" value="10:00" required onchange="triggerConflictCheck()">
+          </div>
+          <div class="form-group">
+            <label class="form-label" for="add-et">End Time</label>
+            <input type="time" id="add-et" class="form-control" value="11:30" required onchange="triggerConflictCheck()">
+          </div>
+        </div>
+        <div class="grid-2">
+          <div class="form-group">
+            <label class="form-label" for="add-org">Organizer</label>
+            <input type="text" id="add-org" class="form-control" placeholder="e.g. Department of CSE" required>
+          </div>
+          <div class="form-group">
+            <label class="form-label" for="add-prio">Priority (1-5)</label>
+            <select id="add-prio" class="form-control">
+              <option value="1">1 - Urgent / Key Event</option>
+              <option value="2">2 - High Priority</option>
+              <option value="3" selected>3 - Medium Priority</option>
+              <option value="4">4 - Low Priority</option>
+              <option value="5">5 - Optional</option>
+            </select>
+          </div>
+        </div>
+        <div class="form-group">
+          <label class="form-label" for="add-dep">Depends On (Optional Event ID)</label>
+          <input type="text" id="add-dep" class="form-control mono" placeholder="e.g. EVT-1001">
+        </div>
+
+        <!-- Live conflict status banner -->
+        <div id="live-conflict-status" style="margin: 14px 0; padding: 10px 14px; border-radius: 8px; font-size: 13px; display: none;"></div>
+
+        <div style="display:flex; justify-content:flex-end; gap:10px; margin-top:20px;">
+          <button type="button" class="btn btn-secondary" onclick="closeModal('add-event-modal')">Cancel</button>
+          <button type="submit" class="btn btn-primary" id="add-event-submit-btn">Schedule Event</button>
+        </div>
+      </form>
+    </div>
+  </div>
+
+  <!-- Reschedule "What-If" Modal -->
+  <div class="modal-overlay" id="reschedule-modal" onclick="handleModalBackdropClick(event, 'reschedule-modal')">
+    <div class="modal-box" style="max-width: 620px;">
+      <div class="modal-header">
+        <div>
+          <h3>Reschedule Sandbox (What-If)</h3>
+          <p style="font-size:12px; color:var(--text-muted); margin-top:2px;" id="reschedule-modal-subtitle">Event ID</p>
+        </div>
+        <button class="modal-close" onclick="closeModal('reschedule-modal')">&times;</button>
+      </div>
+
+      <div class="grid-3" style="margin-bottom: 16px;">
+        <div class="form-group">
+          <label class="form-label">Date</label>
+          <input type="date" id="resched-date" class="form-control" onchange="runReschedulePreview()">
+        </div>
+        <div class="form-group">
+          <label class="form-label">Start Time</label>
+          <input type="time" id="resched-st" class="form-control" onchange="runReschedulePreview()">
+        </div>
+        <div class="form-group">
+          <label class="form-label">End Time</label>
+          <input type="time" id="resched-et" class="form-control" onchange="runReschedulePreview()">
+        </div>
+      </div>
+
+      <div id="reschedule-preview-result" style="border: 1px solid var(--border); border-radius: 8px; padding: 16px; background: #FAFAFC; margin-bottom: 20px;">
+        <div style="color:var(--text-muted); font-size:13px; text-align:center;">Calculating impact ripple and finding alternative slots...</div>
+      </div>
+
+      <div style="display:flex; justify-content:space-between; align-items:center;">
+        <button type="button" class="btn btn-secondary" onclick="closeModal('reschedule-modal')">Discard</button>
+        <button type="button" class="btn btn-primary" id="resched-commit-btn" onclick="commitReschedule()">Commit Reschedule</button>
+      </div>
+    </div>
+  </div>
+
+  <style>
+    @keyframes spin { 100% { transform: rotate(360deg); } }
+  </style>
+
+  <!-- Application Script -->
+  <script>
+    // State
+    const AppState = {
+      user: null,
+      events: [],
+      currentRoute: '',
+      treeData: null,
+      treeStats: null,
+      graphData: null,
+      activeVersion: 1,
+      canUndo: false,
+      canRedo: false,
+      selectedClusterIndex: 0,
+      selectedEventId: null,
+      traversalActive: false,
+      traversalTimer: null,
+      treeViewMode: 'avl', // 'avl' or 'bst'
+    };
+
+    // Color utilities for fixed 6 soft venue colors
+    const VENUE_COLORS = [
+      { bg: 'var(--venue-0)', border: 'var(--venue-border-0)', text: 'var(--venue-text-0)' },
+      { bg: 'var(--venue-1)', border: 'var(--venue-border-1)', text: 'var(--venue-text-1)' },
+      { bg: 'var(--venue-2)', border: 'var(--venue-border-2)', text: 'var(--venue-text-2)' },
+      { bg: 'var(--venue-3)', border: 'var(--venue-border-3)', text: 'var(--venue-text-3)' },
+      { bg: 'var(--venue-4)', border: 'var(--venue-border-4)', text: 'var(--venue-text-4)' },
+      { bg: 'var(--venue-5)', border: 'var(--venue-border-5)', text: 'var(--venue-text-5)' },
+    ];
+
+    const VENUE_MAP = {
+      'Main Auditorium': 0,
+      'Block C Seminar Hall': 1,
+      'CSE Lab 2': 2,
+      'Open Air Theatre': 3
+    };
+
+    function getVenueStyle(venueName) {
+      const idx = (VENUE_MAP[venueName] !== undefined ? VENUE_MAP[venueName] : Math.abs(hashString(venueName || '')) % 6);
+      return VENUE_COLORS[idx % 6];
+    }
+
+    function hashString(str) {
+      let hash = 0;
+      for (let i = 0; i < str.length; i++) {
+        hash = (hash * 31 + str.charCodeAt(i)) & 0xFFFFFFFF;
+      }
+      return hash;
+    }
+
+    // Toast Manager
+    function showToast(message, type = 'info') {
+      const container = document.getElementById('toast-container');
+      const toast = document.createElement('div');
+      toast.className = `toast toast-${type}`;
+      toast.innerHTML = `<span>${message}</span>`;
+      container.appendChild(toast);
+      setTimeout(() => {
+        toast.style.opacity = '0';
+        toast.style.transform = 'translateY(10px)';
+        toast.style.transition = 'all 0.3s ease';
+        setTimeout(() => toast.remove(), 300);
+      }, 3500);
+    }
+
+    // Modal Helpers
+    function openModal(id) {
+      const el = document.getElementById(id);
+      if (el) {
+        el.classList.add('open');
+        document.body.style.overflow = 'hidden';
+      }
+    }
+
+    function closeModal(id) {
+      const el = document.getElementById(id);
+      if (el) {
+        el.classList.remove('open');
+        document.body.style.overflow = '';
+      }
+    }
+
+    function handleModalBackdropClick(e, id) {
+      if (e.target.id === id) closeModal(id);
+    }
+
+    window.addEventListener('keydown', (e) => {
+      if (e.key === 'Escape') {
+        document.querySelectorAll('.modal-overlay.open').forEach(m => closeModal(m.id));
+        document.getElementById('user-dropdown').classList.remove('show');
+      }
+    });
+
+    function toggleUserDropdown() {
+      const d = document.getElementById('user-dropdown');
+      d.classList.toggle('show');
+    }
+
+    function toggleMobileNav() {
+      const nl = document.getElementById('main-nav-links');
+      nl.classList.toggle('open');
+    }
+
+    // API Wrapper
+    async function apiRequest(endpoint, options = {}) {
+      try {
+        const res = await fetch(endpoint, {
+          headers: { 'Content-Type': 'application/json' },
+          ...options
+        });
+        const json = await res.json();
+        return json;
+      } catch (err) {
+        console.error("API error:", err);
+        return { ok: false, data: null, error: err.message || 'Network error' };
+      }
+    }
+
+    // =================================================================
+    // Router & Lifecycle
+    // =================================================================
+    async function initApp() {
+      // Check auth status
+      const authRes = await apiRequest('/api/auth/me');
+      if (authRes.ok && authRes.data) {
+        AppState.user = authRes.data;
+        updateUserUI();
+      } else {
+        AppState.user = null;
+        updateUserUI();
+      }
+
+      window.addEventListener('hashchange', handleRoute);
+      if (!window.location.hash) {
+        window.location.hash = AppState.user ? '#/dashboard' : '#/signin';
+      } else {
+        handleRoute();
+      }
+    }
+
+    function updateUserUI() {
+      const userSec = document.getElementById('user-profile-section');
+      const navLinks = document.getElementById('main-nav-links');
+      if (AppState.user) {
+        userSec.style.display = 'flex';
+        navLinks.style.display = 'flex';
+        document.getElementById('user-name-text').textContent = AppState.user.full_name.split(' ')[0];
+      } else {
+        userSec.style.display = 'none';
+        navLinks.style.display = 'none';
+      }
+    }
+
+    function handleRoute() {
+      const hash = window.location.hash || '#/dashboard';
+      const route = hash.split('?')[0];
+      AppState.currentRoute = route;
+
+      // Unauthenticated guards
+      if (!AppState.user && route !== '#/signin' && route !== '#/signup') {
+        window.location.hash = '#/signin';
+        return;
+      }
+      if (AppState.user && (route === '#/signin' || route === '#/signup')) {
+        window.location.hash = '#/dashboard';
+        return;
+      }
+
+      // Update Nav active style
+      document.querySelectorAll('nav.nav-links a').forEach(a => a.classList.remove('active'));
+      const activeNavId = 'nav-' + route.replace('#/', '');
+      const activeNavEl = document.getElementById(activeNavId);
+      if (activeNavEl) activeNavEl.classList.add('active');
+
+      renderRoute(route);
+    }
+
+    async function renderRoute(route) {
+      const container = document.getElementById('page-content');
+      document.getElementById('loading-spinner').style.display = 'none';
+
+      switch (route) {
+        case '#/signin':
+          renderSignIn(container);
+          break;
+        case '#/signup':
+          renderSignUp(container);
+          break;
+        case '#/dashboard':
+          await renderDashboard(container);
+          break;
+        case '#/events':
+          await renderEvents(container);
+          break;
+        case '#/schedule':
+          await renderSchedule(container);
+          break;
+        case '#/conflicts':
+          await renderConflicts(container);
+          break;
+        case '#/tree':
+          await renderTree(container);
+          break;
+        case '#/benchmarks':
+          await renderBenchmarks(container);
+          break;
+        default:
+          renderDashboard(container);
+      }
+    }
+
+    // =================================================================
+    // 1. Sign In Page
+    // =================================================================
+    function renderSignIn(container) {
+      container.innerHTML = `
+        <div style="max-width: 400px; margin: 40px auto;">
+          <div class="card" style="padding: 32px;">
+            <div style="text-align: center; margin-bottom: 24px;">
+              <h2 style="font-size: 22px; font-weight: 700;">Sign in to ChronoGraph</h2>
+              <p style="color: var(--text-muted); font-size: 13px; margin-top: 4px;">Self-balancing AVL event scheduling platform</p>
+            </div>
+
+            <form onsubmit="handleSignInSubmit(event)">
+              <div class="form-group">
+                <label class="form-label">Email address</label>
+                <input type="email" id="signin-email" class="form-control" placeholder="name@college.edu" required>
+              </div>
+              <div class="form-group">
+                <label class="form-label" style="display:flex; justify-content:space-between;">
+                  <span>Password</span>
+                  <span style="font-size:11px; cursor:pointer; color:var(--primary);" onclick="togglePasswordVisibility('signin-pwd')">Show/Hide</span>
+                </label>
+                <input type="password" id="signin-pwd" class="form-control" placeholder="••••••••" required>
+              </div>
+              <div id="signin-error" class="input-error" style="display:none; margin-bottom:12px;"></div>
+              <button type="submit" class="btn btn-primary" id="signin-btn" style="width: 100%; margin-top: 8px;">Sign in</button>
+            </form>
+
+            <div style="margin: 20px 0; border-top: 1px solid var(--border); position: relative; text-align: center;">
+              <span style="background: var(--surface); padding: 0 10px; font-size: 12px; color: var(--text-muted); position: relative; top: -10px;">or</span>
+            </div>
+
+            <button type="button" class="btn btn-secondary" onclick="fillDemoCredentials()" style="width: 100%;">
+              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"></path><circle cx="12" cy="7" r="4"></circle></svg>
+              Use demo account
+            </button>
+
+            <div style="text-align: center; margin-top: 20px; font-size: 13px; color: var(--text-muted);">
+              Don't have an account? <a href="#/signup" style="font-weight: 600;">Create account</a>
+            </div>
+          </div>
+        </div>
+      `;
+    }
+
+    function fillDemoCredentials() {
+      document.getElementById('signin-email').value = 'demo@chronograph.app';
+      document.getElementById('signin-pwd').value = 'Demo@1234';
+      showToast('Demo credentials filled!', 'info');
+    }
+
+    function togglePasswordVisibility(id) {
+      const el = document.getElementById(id);
+      if (el) el.type = el.type === 'password' ? 'text' : 'password';
+    }
+
+    async function handleSignInSubmit(e) {
+      e.preventDefault();
+      const email = document.getElementById('signin-email').value.trim();
+      const password = document.getElementById('signin-pwd').value;
+      const btn = document.getElementById('signin-btn');
+      const errEl = document.getElementById('signin-error');
+
+      btn.disabled = true;
+      btn.textContent = 'Signing in...';
+      errEl.style.display = 'none';
+
+      const res = await apiRequest('/api/auth/signin', {
+        method: 'POST',
+        body: JSON.stringify({ email, password })
+      });
+
+      btn.disabled = false;
+      btn.textContent = 'Sign in';
+
+      if (res.ok && res.data) {
+        AppState.user = res.data;
+        updateUserUI();
+        showToast(`Welcome back, ${res.data.full_name}!`, 'success');
+        window.location.hash = '#/dashboard';
+      } else {
+        errEl.textContent = res.error || 'Sign in failed';
+        errEl.style.display = 'block';
+      }
+    }
+
+    // =================================================================
+    // 2. Sign Up Page
+    // =================================================================
+    function renderSignUp(container) {
+      container.innerHTML = `
+        <div style="max-width: 440px; margin: 30px auto;">
+          <div class="card" style="padding: 32px;">
+            <div style="text-align: center; margin-bottom: 24px;">
+              <h2 style="font-size: 22px; font-weight: 700;">Create Account</h2>
+              <p style="color: var(--text-muted); font-size: 13px; margin-top: 4px;">Get started with ChronoGraph</p>
+            </div>
+
+            <form onsubmit="handleSignUpSubmit(event)">
+              <div class="form-group">
+                <label class="form-label">Full Name</label>
+                <input type="text" id="signup-name" class="form-control" placeholder="Prof. Jane Doe" required>
+              </div>
+              <div class="form-group">
+                <label class="form-label">Email address</label>
+                <input type="email" id="signup-email" class="form-control" placeholder="jane@college.edu" required>
+              </div>
+              <div class="form-group">
+                <label class="form-label">Password</label>
+                <input type="password" id="signup-pwd" class="form-control" placeholder="Min. 8 chars, 1 letter, 1 number" required oninput="checkPasswordStrength(this.value)">
+                <div id="pwd-strength-bar" style="height: 4px; background: #E5E7EB; border-radius: 2px; margin-top: 6px; overflow: hidden;">
+                  <div id="pwd-strength-fill" style="width: 0%; height: 100%; transition: width 0.2s, background 0.2s;"></div>
+                </div>
+              </div>
+              <div class="form-group">
+                <label class="form-label">Confirm Password</label>
+                <input type="password" id="signup-confirm" class="form-control" placeholder="Repeat password" required>
+              </div>
+              <div id="signup-error" class="input-error" style="display:none; margin-bottom:12px;"></div>
+              <button type="submit" class="btn btn-primary" id="signup-btn" style="width: 100%; margin-top: 8px;">Create account</button>
+            </form>
+
+            <div style="text-align: center; margin-top: 20px; font-size: 13px; color: var(--text-muted);">
+              Already have an account? <a href="#/signin" style="font-weight: 600;">Sign in</a>
+            </div>
+          </div>
+        </div>
+      `;
+    }
+
+    function checkPasswordStrength(pwd) {
+      let score = 0;
+      if (pwd.length >= 8) score++;
+      if (/[A-Za-z]/.test(pwd)) score++;
+      if (/\d/.test(pwd)) score++;
+      if (/[^A-Za-z0-9]/.test(pwd)) score++;
+
+      const fill = document.getElementById('pwd-strength-fill');
+      if (!fill) return;
+      if (pwd.length === 0) {
+        fill.style.width = '0%';
+      } else if (score <= 2) {
+        fill.style.width = '33%';
+        fill.style.background = 'var(--danger)';
+      } else if (score === 3) {
+        fill.style.width = '66%';
+        fill.style.background = 'var(--warning)';
+      } else {
+        fill.style.width = '100%';
+        fill.style.background = 'var(--success)';
+      }
+    }
+
+    async function handleSignUpSubmit(e) {
+      e.preventDefault();
+      const full_name = document.getElementById('signup-name').value.trim();
+      const email = document.getElementById('signup-email').value.trim();
+      const password = document.getElementById('signup-pwd').value;
+      const confirm = document.getElementById('signup-confirm').value;
+      const btn = document.getElementById('signup-btn');
+      const errEl = document.getElementById('signup-error');
+
+      if (password !== confirm) {
+        errEl.textContent = 'Passwords do not match';
+        errEl.style.display = 'block';
+        return;
+      }
+
+      btn.disabled = true;
+      btn.textContent = 'Creating account...';
+      errEl.style.display = 'none';
+
+      const res = await apiRequest('/api/auth/signup', {
+        method: 'POST',
+        body: JSON.stringify({ full_name, email, password })
+      });
+
+      btn.disabled = false;
+      btn.textContent = 'Create account';
+
+      if (res.ok && res.data) {
+        AppState.user = res.data;
+        updateUserUI();
+        showToast('Account created successfully!', 'success');
+        window.location.hash = '#/dashboard';
+      } else {
+        errEl.textContent = res.error || 'Sign up failed';
+        errEl.style.display = 'block';
+      }
+    }
+
+    async function handleSignOut() {
+      await apiRequest('/api/auth/signout', { method: 'POST' });
+      AppState.user = null;
+      updateUserUI();
+      showToast('Signed out', 'info');
+      window.location.hash = '#/signin';
+    }
+
+    // =================================================================
+    // 3. Dashboard Page
+    // =================================================================
+    async function renderDashboard(container) {
+      const [eventsRes, statsRes, graphRes] = await Promise.all([
+        apiRequest('/api/events'),
+        apiRequest('/api/tree/stats'),
+        apiRequest('/api/graph')
+      ]);
+
+      const events = eventsRes.ok ? eventsRes.data : [];
+      const stats = statsRes.ok ? statsRes.data : { height: 0, node_count: 0, rotations: 0, max_gap: 0 };
+      const graph = graphRes.ok ? graphRes.data : { edges: [], components: [] };
+
+      // Calculate today's events (using Oct 26, 2026 as standard demo anchor or current date)
+      const sampleDate = "2026-10-26";
+      const todaysEvents = events.filter(e => e.date === sampleDate);
+
+      // Active conflicts from graph
+      const timeConflicts = graph.edges.filter(e => e.type === 'time_overlap');
+
+      // Upcoming 5
+      const upcoming = events.slice(0, 5);
+
+      container.innerHTML = `
+        <div class="page-header">
+          <div>
+            <h1>Dashboard</h1>
+            <p>Real-time overview of college events and AVL tree metrics</p>
+          </div>
+          <button class="btn btn-primary" onclick="openAddEventModal()">
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><line x1="12" y1="5" x2="12" y2="19"></line><line x1="5" y1="12" x2="19" y2="12"></line></svg>
+            Add Event
+          </button>
+        </div>
+
+        <!-- 4 Stat Cards -->
+        <div class="grid-4" style="margin-bottom: 24px;">
+          <div class="stat-card">
+            <div class="stat-title">TOTAL EVENTS</div>
+            <div class="stat-value">${events.length}</div>
+            <div class="stat-sub">Across 4 campus venues</div>
+          </div>
+          <div class="stat-card">
+            <div class="stat-title">TODAY'S EVENTS (${sampleDate})</div>
+            <div class="stat-value">${todaysEvents.length}</div>
+            <div class="stat-sub">Scheduled for today</div>
+          </div>
+          <div class="stat-card">
+            <div class="stat-title">ACTIVE CONFLICTS</div>
+            <div class="stat-value" style="color: ${timeConflicts.length > 0 ? 'var(--danger)' : 'var(--success)'};">
+              ${timeConflicts.length}
+            </div>
+            <div class="stat-sub">${graph.components.length} conflict clusters</div>
+          </div>
+          <div class="stat-card">
+            <div class="stat-title">AVL HEIGHT</div>
+            <div class="stat-value">${stats.height}</div>
+            <div class="stat-sub">Balanced · Rotations: ${stats.rotations}</div>
+          </div>
+        </div>
+
+        <!-- Conflicts Card Banner if any -->
+        ${timeConflicts.length > 0 ? `
+          <div class="card" style="border-left: 4px solid var(--danger); background: #FFFDFD; display:flex; justify-content:space-between; align-items:center; flex-wrap:wrap; gap:16px;">
+            <div>
+              <div style="font-weight:600; color:var(--danger); display:flex; align-items:center; gap:6px;">
+                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"></circle><line x1="12" y1="8" x2="12" y2="12"></line><line x1="12" y1="16" x2="12.01" y2="16"></line></svg>
+                Conflicts Needing Attention (${timeConflicts.length})
+              </div>
+              <p style="font-size:13px; color:var(--text-muted); margin-top:2px;">
+                Overlapping schedule detected between events in the same time frame.
+              </p>
+            </div>
+            <a href="#/conflicts" class="btn btn-secondary btn-sm" style="color:var(--danger); border-color:var(--danger);">Resolve in Conflict Graph &rarr;</a>
+          </div>
+        ` : ''}
+
+        <!-- 2 Column: Today's Schedule & Upcoming -->
+        <div class="grid-2">
+          <!-- Today's Schedule -->
+          <div class="card">
+            <h3 style="font-size: 16px; font-weight:600; margin-bottom: 16px;">Today's Schedule (${sampleDate})</h3>
+            ${todaysEvents.length === 0 ? `
+              <div style="text-align:center; padding: 24px 0; color: var(--text-muted);">No events scheduled for today.</div>
+            ` : `
+              <div style="display:flex; flex-direction:column; gap:10px;">
+                ${todaysEvents.map(ev => {
+                  const vStyle = getVenueStyle(ev.venue);
+                  return `
+                    <div style="display:flex; align-items:center; justify-content:space-between; padding:10px 14px; background:var(--bg); border-radius:8px; border-left:3px solid ${vStyle.border};">
+                      <div>
+                        <div style="font-weight:600; font-size:13px;">${escapeHtml(ev.name)}</div>
+                        <div style="font-size:12px; color:var(--text-muted); margin-top:2px;">${escapeHtml(ev.venue)} · ${escapeHtml(ev.organizer)}</div>
+                      </div>
+                      <div class="mono" style="font-size:12px; font-weight:500;">
+                        ${ev.start_time} - ${ev.end_time}
+                      </div>
+                    </div>
+                  `;
+                }).join('')}
+              </div>
+            `}
+          </div>
+
+          <!-- Upcoming Next 5 -->
+          <div class="card">
+            <h3 style="font-size: 16px; font-weight:600; margin-bottom: 16px;">Upcoming Events</h3>
+            <div style="display:flex; flex-direction:column; gap:10px;">
+              ${upcoming.map(ev => `
+                <div style="display:flex; align-items:center; justify-content:space-between; padding:10px 14px; background:var(--bg); border-radius:8px;">
+                  <div>
+                    <div style="font-weight:600; font-size:13px;">${escapeHtml(ev.name)}</div>
+                    <div style="font-size:12px; color:var(--text-muted); margin-top:2px;">${ev.date} · ${escapeHtml(ev.venue)}</div>
+                  </div>
+                  <span class="badge badge-outline mono">${ev.start_time}</span>
+                </div>
+              `).join('')}
+            </div>
+          </div>
+        </div>
+      `;
+    }
+
+    // =================================================================
+    // 4. Events Page
+    // =================================================================
+    let eventsCurrentPage = 1;
+    const EVENTS_PER_PAGE = 10;
+    let eventsFilterDate = '';
+    let eventsFilterVenue = '';
+    let eventsSearchQuery = '';
+
+    async function renderEvents(container) {
+      container.innerHTML = `
+        <div class="page-header">
+          <div>
+            <h1>Events Directory</h1>
+            <p>Manage, filter, and search events using Trie autocomplete and Hash table</p>
+          </div>
+          <button class="btn btn-primary" onclick="openAddEventModal()">
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><line x1="12" y1="5" x2="12" y2="19"></line><line x1="5" y1="12" x2="19" y2="12"></line></svg>
+            Add Event
+          </button>
+        </div>
+
+        <div class="card" style="padding: 16px; margin-bottom: 20px;">
+          <div style="display: flex; gap: 12px; flex-wrap: wrap;">
+            <!-- Trie Autocomplete search input -->
+            <div class="autocomplete-wrapper" style="flex: 2; min-width: 240px;">
+              <input type="text" id="event-search-input" class="form-control" placeholder="Search by ID (Hash) or Name prefix (Trie)..." value="${eventsSearchQuery}" oninput="handleTrieSearchInput(this.value)">
+              <div class="autocomplete-list" id="trie-autocomplete-box"></div>
+            </div>
+
+            <!-- Date filter -->
+            <div style="flex: 1; min-width: 150px;">
+              <input type="date" id="event-date-filter" class="form-control" value="${eventsFilterDate}" onchange="handleEventFilterChange()">
+            </div>
+
+            <!-- Venue filter -->
+            <div style="flex: 1; min-width: 180px;">
+              <select id="event-venue-filter" class="form-control" onchange="handleEventFilterChange()">
+                <option value="">All Venues</option>
+                <option value="Main Auditorium" ${eventsFilterVenue === 'Main Auditorium' ? 'selected' : ''}>Main Auditorium</option>
+                <option value="Block C Seminar Hall" ${eventsFilterVenue === 'Block C Seminar Hall' ? 'selected' : ''}>Block C Seminar Hall</option>
+                <option value="CSE Lab 2" ${eventsFilterVenue === 'CSE Lab 2' ? 'selected' : ''}>CSE Lab 2</option>
+                <option value="Open Air Theatre" ${eventsFilterVenue === 'Open Air Theatre' ? 'selected' : ''}>Open Air Theatre</option>
+              </select>
+            </div>
+
+            <button class="btn btn-secondary" onclick="resetEventFilters()">Reset</button>
+          </div>
+        </div>
+
+        <div class="card" style="padding: 0; overflow: hidden;">
+          <div class="table-container">
+            <table class="data-table">
+              <thead>
+                <tr>
+                  <th>ID</th>
+                  <th>Name</th>
+                  <th>Date</th>
+                  <th>Time</th>
+                  <th>Venue</th>
+                  <th>Organizer</th>
+                  <th>Priority</th>
+                  <th style="text-align: right;">Actions</th>
+                </tr>
+              </thead>
+              <tbody id="events-table-body">
+                <tr><td colspan="8" style="text-align:center; padding: 30px;">Loading events...</td></tr>
+              </tbody>
+            </table>
+          </div>
+          <div style="display:flex; justify-content:space-between; align-items:center; padding:12px 20px; border-top:1px solid var(--border); background:#F9FAFB;">
+            <div style="font-size:13px; color:var(--text-muted);" id="events-pagination-info">Showing 0 of 0</div>
+            <div style="display:flex; gap:6px;">
+              <button class="btn btn-secondary btn-sm" id="btn-prev-page" onclick="changeEventsPage(-1)">Previous</button>
+              <button class="btn btn-secondary btn-sm" id="btn-next-page" onclick="changeEventsPage(1)">Next</button>
+            </div>
+          </div>
+        </div>
+      `;
+
+      loadAndRenderEventsTable();
+    }
+
+    async function loadAndRenderEventsTable() {
+      let url = '/api/events?';
+      if (eventsFilterDate) url += `date=${encodeURIComponent(eventsFilterDate)}&`;
+      if (eventsFilterVenue) url += `venue=${encodeURIComponent(eventsFilterVenue)}&`;
+      if (eventsSearchQuery) url += `q=${encodeURIComponent(eventsSearchQuery)}&`;
+
+      const res = await apiRequest(url);
+      const events = res.ok ? res.data : [];
+      AppState.events = events;
+
+      const tbody = document.getElementById('events-table-body');
+      const pagInfo = document.getElementById('events-pagination-info');
+      const prevBtn = document.getElementById('btn-prev-page');
+      const nextBtn = document.getElementById('btn-next-page');
+
+      if (!tbody) return;
+
+      if (events.length === 0) {
+        tbody.innerHTML = `<tr><td colspan="8" style="text-align:center; padding: 40px; color:var(--text-muted);">No events found matching your criteria.</td></tr>`;
+        pagInfo.textContent = 'Showing 0 of 0';
+        prevBtn.disabled = true;
+        nextBtn.disabled = true;
+        return;
+      }
+
+      const totalPages = Math.ceil(events.length / EVENTS_PER_PAGE);
+      if (eventsCurrentPage > totalPages) eventsCurrentPage = totalPages;
+      if (eventsCurrentPage < 1) eventsCurrentPage = 1;
+
+      const startIdx = (eventsCurrentPage - 1) * EVENTS_PER_PAGE;
+      const pageEvents = events.slice(startIdx, startIdx + EVENTS_PER_PAGE);
+
+      tbody.innerHTML = pageEvents.map(ev => {
+        const vStyle = getVenueStyle(ev.venue);
+        return `
+          <tr>
+            <td class="mono" style="font-weight:600; color:var(--primary);">${escapeHtml(ev.id)}</td>
+            <td>
+              <div style="font-weight:600;">${escapeHtml(ev.name)}</div>
+              ${ev.depends_on ? `<div style="font-size:11px; color:var(--text-muted);">Prereq: <span class="mono">${escapeHtml(ev.depends_on)}</span></div>` : ''}
+            </td>
+            <td>${ev.date}</td>
+            <td class="mono">${ev.start_time} - ${ev.end_time}</td>
+            <td>
+              <span class="badge" style="background:${vStyle.bg}; color:${vStyle.text}; border:1px solid ${vStyle.border};">
+                ${escapeHtml(ev.venue)}
+              </span>
+            </td>
+            <td>${escapeHtml(ev.organizer)}</td>
+            <td>
+              <span class="badge ${ev.priority === 1 ? 'badge-danger' : ev.priority === 2 ? 'badge-warning' : 'badge-primary'}">
+                P${ev.priority}
+              </span>
+            </td>
+            <td style="text-align: right; white-space: nowrap;">
+              <button class="btn btn-secondary btn-sm" onclick="openRescheduleModal('${ev.id}')">Reschedule</button>
+              <button class="btn btn-secondary btn-sm" style="color:var(--danger);" onclick="deleteEvent('${ev.id}')">Delete</button>
+            </td>
+          </tr>
+        `;
+      }).join('');
+
+      pagInfo.textContent = `Showing ${startIdx + 1}-${Math.min(startIdx + EVENTS_PER_PAGE, events.length)} of ${events.length}`;
+      prevBtn.disabled = eventsCurrentPage === 1;
+      nextBtn.disabled = eventsCurrentPage === totalPages;
+    }
+
+    function changeEventsPage(delta) {
+      eventsCurrentPage += delta;
+      loadAndRenderEventsTable();
+    }
+
+    function handleEventFilterChange() {
+      eventsFilterDate = document.getElementById('event-date-filter').value;
+      eventsFilterVenue = document.getElementById('event-venue-filter').value;
+      eventsCurrentPage = 1;
+      loadAndRenderEventsTable();
+    }
+
+    function resetEventFilters() {
+      eventsFilterDate = '';
+      eventsFilterVenue = '';
+      eventsSearchQuery = '';
+      eventsCurrentPage = 1;
+      document.getElementById('event-date-filter').value = '';
+      document.getElementById('event-venue-filter').value = '';
+      document.getElementById('event-search-input').value = '';
+      loadAndRenderEventsTable();
+    }
+
+    // Trie autocomplete input handler
+    let trieDebounce = null;
+    function handleTrieSearchInput(val) {
+      clearTimeout(trieDebounce);
+      trieDebounce = setTimeout(async () => {
+        eventsSearchQuery = val.trim();
+        const box = document.getElementById('trie-autocomplete-box');
+        if (!eventsSearchQuery || eventsSearchQuery.length < 2) {
+          box.style.display = 'none';
+          loadAndRenderEventsTable();
+          return;
+        }
+
+        // Live prefix search via backend events filter
+        const res = await apiRequest(`/api/events?q=${encodeURIComponent(eventsSearchQuery)}`);
+        if (res.ok && res.data && res.data.length > 0) {
+          box.innerHTML = res.data.slice(0, 6).map(e => `
+            <div class="autocomplete-item" onclick="selectTrieMatch('${e.id}', '${escapeQuotes(e.name)}')">
+              <span style="font-weight:500;">${escapeHtml(e.name)}</span>
+              <span class="mono" style="font-size:11px; color:var(--text-muted);">${e.id}</span>
+            </div>
+          `).join('');
+          box.style.display = 'block';
+        } else {
+          box.style.display = 'none';
+        }
+        loadAndRenderEventsTable();
+      }, 150);
+    }
+
+    function selectTrieMatch(id, name) {
+      eventsSearchQuery = id;
+      document.getElementById('event-search-input').value = id;
+      document.getElementById('trie-autocomplete-box').style.display = 'none';
+      loadAndRenderEventsTable();
+    }
+
+    async function deleteEvent(id) {
+      if (!confirm(`Are you sure you want to delete ${id}?`)) return;
+      const res = await apiRequest(`/api/events/${id}`, { method: 'DELETE' });
+      if (res.ok) {
+        let msg = `Event ${id} deleted`;
+        if (res.data && res.data.auto_placed) {
+          msg += ` & auto-placed waitlisted event ${res.data.auto_placed.id} into freed slot!`;
+        }
+        showToast(msg, 'success');
+        loadAndRenderEventsTable();
+      } else {
+        showToast(res.error || 'Failed to delete event', 'error');
+      }
+    }
+
+    // =================================================================
+    // Live Conflict Checking & Add Event Modal
+    // =================================================================
+    function openAddEventModal() {
+      document.getElementById('live-conflict-status').style.display = 'none';
+      openModal('add-event-modal');
+    }
+
+    let conflictCheckDebounce = null;
+    function triggerConflictCheck() {
+      clearTimeout(conflictCheckDebounce);
+      conflictCheckDebounce = setTimeout(async () => {
+        const date = document.getElementById('add-date').value;
+        const st = document.getElementById('add-st').value;
+        const et = document.getElementById('add-et').value;
+        const statusBox = document.getElementById('live-conflict-status');
+
+        if (!date || !st || !et || st >= et) {
+          statusBox.style.display = 'none';
+          return;
+        }
+
+        const res = await apiRequest('/api/conflicts/check', {
+          method: 'POST',
+          body: JSON.stringify({ date, start_time: st, end_time: et })
+        });
+
+        if (res.ok && res.data) {
+          statusBox.style.display = 'block';
+          if (!res.data.has_conflict) {
+            statusBox.style.background = 'var(--success-light)';
+            statusBox.style.color = 'var(--success)';
+            statusBox.style.border = '1px solid #86EFAC';
+            statusBox.innerHTML = `<strong>Slot is free!</strong> No AVL time conflicts found for this period.`;
+          } else {
+            statusBox.style.background = 'var(--warning-light)';
+            statusBox.style.color = 'var(--warning)';
+            statusBox.style.border = '1px solid #FDE68A';
+            let html = `<strong>Conflict detected!</strong> Overlaps with ${res.data.conflicts.map(c => `<b>${escapeHtml(c.id)}</b>`).join(', ')}.`;
+            if (res.data.suggestions && res.data.suggestions.length > 0) {
+              html += `<div style="margin-top:6px; font-weight:600;">Available slots:</div><div style="display:flex; gap:6px; margin-top:4px; flex-wrap:wrap;">`;
+              res.data.suggestions.forEach(s => {
+                html += `<button type="button" class="btn btn-secondary btn-sm mono" onclick="useSuggestedSlot('${s.start_time}', '${s.end_time}')">${s.start_time}-${s.end_time}</button>`;
+              });
+              html += `</div>`;
+            }
+            statusBox.innerHTML = html;
+          }
+        }
+      }, 200);
+    }
+
+    function useSuggestedSlot(st, et) {
+      document.getElementById('add-st').value = st;
+      document.getElementById('add-et').value = et;
+      triggerConflictCheck();
+    }
+
+    async function submitAddEvent(e) {
+      e.preventDefault();
+      const name = document.getElementById('add-title').value.trim();
+      const date = document.getElementById('add-date').value;
+      const venue = document.getElementById('add-venue').value;
+      const start_time = document.getElementById('add-st').value;
+      const end_time = document.getElementById('add-et').value;
+      const organizer = document.getElementById('add-org').value.trim();
+      const priority = parseInt(document.getElementById('add-prio').value);
+      const depends_on = document.getElementById('add-dep').value.trim() || null;
+      const btn = document.getElementById('add-event-submit-btn');
+
+      btn.disabled = true;
+      const res = await apiRequest('/api/events', {
+        method: 'POST',
+        body: JSON.stringify({ name, date, start_time, end_time, venue, organizer, priority, depends_on })
+      });
+      btn.disabled = false;
+
+      if (res.ok) {
+        showToast(`Event ${res.data.id} created successfully!`, 'success');
+        closeModal('add-event-modal');
+        if (AppState.currentRoute === '#/events') loadAndRenderEventsTable();
+        else if (AppState.currentRoute === '#/schedule') renderSchedule(document.getElementById('page-content'));
+        else if (AppState.currentRoute === '#/dashboard') renderDashboard(document.getElementById('page-content'));
+      } else {
+        // If conflict error, offer adding to waitlist!
+        if (res.data && res.data.conflicts) {
+          if (confirm(`Conflict detected with ${res.data.conflicts.length} event(s). Would you like to add this event to the Priority Waitlist instead?`)) {
+            const wRes = await apiRequest('/api/waitlist', {
+              method: 'POST',
+              body: JSON.stringify({ name, date, start_time, end_time, venue, organizer, priority, depends_on })
+            });
+            if (wRes.ok) {
+              showToast('Event queued into Waitlist min-heap!', 'info');
+              closeModal('add-event-modal');
+            }
+          }
+        } else {
+          showToast(res.error || 'Failed to add event', 'error');
+        }
+      }
+    }
+
+    // =================================================================
+    // 5. Schedule (Week Timeline) Page
+    // =================================================================
+    let currentWeekStart = '2026-10-26'; // Demo week 1 start
+
+    async function renderSchedule(container) {
+      const [eventsRes, statsRes] = await Promise.all([
+        apiRequest('/api/events'),
+        apiRequest('/api/tree/stats')
+      ]);
+
+      const events = eventsRes.ok ? eventsRes.data : [];
+      const stats = statsRes.ok ? statsRes.data : { height: 0 };
+
+      // 7 days from currentWeekStart
+      const days = [];
+      const startD = new Date(currentWeekStart);
+      for (let i = 0; i < 7; i++) {
+        const d = new Date(startD);
+        d.setDate(d.getDate() + i);
+        days.push(d.toISOString().split('T')[0]);
+      }
+
+      container.innerHTML = `
+        <div class="page-header">
+          <div>
+            <h1>Weekly Schedule</h1>
+            <p>Interactive calendar timeline with conflict boundaries and instant undo/redo</p>
+          </div>
+          <div style="display:flex; gap:10px; align-items:center;">
+            <div class="version-indicator">
+              <span>Version:</span>
+              <strong id="schedule-version-num">${AppState.activeVersion}</strong>
+            </div>
+            <button class="btn btn-secondary btn-sm" id="btn-undo" onclick="handleUndo()">
+              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="1 4 1 10 7 10"></polyline><path d="M3.51 15a9 9 0 1 0 2.13-9.36L1 10"></path></svg>
+              Undo
+            </button>
+            <button class="btn btn-secondary btn-sm" id="btn-redo" onclick="handleRedo()">
+              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="23 4 23 10 17 10"></polyline><path d="M20.49 15a9 9 0 1 1-2.12-9.36L23 10"></path></svg>
+              Redo
+            </button>
+            <button class="btn btn-primary btn-sm" onclick="openAddEventModal()">+ New Event</button>
+          </div>
+        </div>
+
+        <div class="schedule-toolbar">
+          <div style="display:flex; align-items:center; gap:8px;">
+            <button class="btn btn-secondary btn-sm" onclick="changeWeek(-7)">&larr; Prev Week</button>
+            <span style="font-weight:600; font-size:13px; font-family:var(--font-mono);">${days[0]} to ${days[6]}</span>
+            <button class="btn btn-secondary btn-sm" onclick="changeWeek(7)">Next Week &rarr;</button>
+          </div>
+          <div style="display:flex; gap:12px; font-size:12px; align-items:center;">
+            <span>Legend:</span>
+            <span style="display:inline-flex; align-items:center; gap:4px;"><span style="width:10px; height:10px; background:#EEF2FF; border:1px solid #6366F1; border-radius:2px;"></span> Aud</span>
+            <span style="display:inline-flex; align-items:center; gap:4px;"><span style="width:10px; height:10px; background:#ECFDF5; border:1px solid #10B981; border-radius:2px;"></span> Hall C</span>
+            <span style="display:inline-flex; align-items:center; gap:4px;"><span style="width:10px; height:10px; background:#FFFBEB; border:1px solid #F59E0B; border-radius:2px;"></span> Lab 2</span>
+            <span style="display:inline-flex; align-items:center; gap:4px;"><span style="width:10px; height:10px; background:#FFF1F2; border:1px solid #F43F5E; border-radius:2px;"></span> OAT</span>
+            <span style="display:inline-flex; align-items:center; gap:4px;"><span style="width:10px; height:10px; border:2px solid var(--danger); border-radius:2px;"></span> Conflict</span>
+          </div>
+        </div>
+
+        <div class="timeline-container">
+          <div class="timeline-grid">
+            <!-- Header Row -->
+            <div class="timeline-header-cell">Time</div>
+            ${days.map(d => {
+              const dt = new Date(d + 'T00:00:00');
+              const dayName = dt.toLocaleDateString('en-US', { weekday: 'short' });
+              return `<div class="timeline-header-cell">${dayName} <span class="mono" style="font-size:11px; opacity:0.7;">${d.slice(5)}</span></div>`;
+            }).join('')}
+
+            <!-- Time column: 8:00 to 20:00 -->
+            <div class="timeline-time-col">
+              ${Array.from({ length: 12 }, (_, i) => {
+                const hour = 8 + i;
+                return `<div class="timeline-time-slot">${hour < 10 ? '0' : ''}${hour}:00</div>`;
+              }).join('')}
+            </div>
+
+            <!-- 7 Day Columns -->
+            ${days.map(d => {
+              const dayEvents = events.filter(e => e.date === d);
+              return `
+                <div class="timeline-day-col" id="col-${d}">
+                  ${dayEvents.map(ev => {
+                    const [sh, sm] = ev.start_time.split(':').map(Number);
+                    const [eh, em] = ev.end_time.split(':').map(Number);
+                    const startMinutesFrom8 = (sh - 8) * 60 + sm;
+                    const durationMinutes = (eh - sh) * 60 + (em - sm);
+
+                    // 52px per 60 minutes
+                    const topPx = Math.max(0, (startMinutesFrom8 / 60) * 52);
+                    const heightPx = Math.max(22, (durationMinutes / 60) * 52 - 2);
+
+                    const vStyle = getVenueStyle(ev.venue);
+
+                    // Check if event has conflict on same date
+                    const isConflicted = dayEvents.some(other => (
+                      other.id !== ev.id &&
+                      Math.max(other.start_minute, ev.start_minute) < Math.min(other.end_minute, ev.end_minute)
+                    ));
+
+                    return `
+                      <div class="event-block ${isConflicted ? 'conflicted' : ''}"
+                           style="top:${topPx}px; height:${heightPx}px; background:${vStyle.bg}; border-color:${vStyle.border}; color:${vStyle.text};"
+                           onclick="openRescheduleModal('${ev.id}')"
+                           title="${escapeQuotes(ev.name)} (${ev.start_time}-${ev.end_time})">
+                        <div class="event-block-title">${escapeHtml(ev.name)}</div>
+                        <div class="event-block-time">${ev.start_time} - ${ev.end_time}</div>
+                      </div>
+                    `;
+                  }).join('')}
+                </div>
+              `;
+            }).join('')}
+          </div>
+        </div>
+      `;
+    }
+
+    function changeWeek(days) {
+      const d = new Date(currentWeekStart);
+      d.setDate(d.getDate() + days);
+      currentWeekStart = d.toISOString().split('T')[0];
+      renderSchedule(document.getElementById('page-content'));
+    }
+
+    async function handleUndo() {
+      const res = await apiRequest('/api/undo', { method: 'POST' });
+      if (res.ok) {
+        AppState.activeVersion = res.data.version;
+        showToast(`Undo: ${res.data.description}`, 'info');
+        renderSchedule(document.getElementById('page-content'));
+      } else {
+        showToast(res.error || 'Nothing to undo', 'error');
+      }
+    }
+
+    async function handleRedo() {
+      const res = await apiRequest('/api/redo', { method: 'POST' });
+      if (res.ok) {
+        AppState.activeVersion = res.data.version;
+        showToast(`Redo: ${res.data.description}`, 'info');
+        renderSchedule(document.getElementById('page-content'));
+      } else {
+        showToast(res.error || 'Nothing to redo', 'error');
+      }
+    }
+
+    // =================================================================
+    // 6. Conflicts (Ripple Graph) Page
+    // =================================================================
+    async function renderConflicts(container) {
+      const res = await apiRequest('/api/graph');
+      if (!res.ok) {
+        container.innerHTML = `<div class="card">Error loading conflict graph: ${res.error}</div>`;
+        return;
+      }
+
+      AppState.graphData = res.data;
+      const components = res.data.components || [];
+      const coloring = res.data.coloring || {};
+      const topo = res.data.topological_sort || { has_cycle: false, order: [] };
+
+      container.innerHTML = `
+        <div class="page-header">
+          <div>
+            <h1>Conflict & Ripple Graph</h1>
+            <p>Layered impact analysis, connected conflict clusters, greedy venue coloring, and Kahn topological order</p>
+          </div>
+        </div>
+
+        ${topo.has_cycle ? `
+          <div class="card" style="border-left: 4px solid var(--danger); background: #FEF2F2; margin-bottom: 20px;">
+            <div style="font-weight:600; color:var(--danger); display:flex; align-items:center; gap:6px;">
+              <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"></circle><line x1="12" y1="8" x2="12" y2="12"></line><line x1="12" y1="16" x2="12.01" y2="16"></line></svg>
+              Dependency Cycle Warning!
+            </div>
+            <p style="font-size:13px; color:var(--text); margin-top:4px;">
+              ${escapeHtml(topo.error || 'Cyclic dependency discovered among scheduled events')}. Cyclic events: <span class="mono">${topo.cycle_nodes ? topo.cycle_nodes.join(', ') : ''}</span>
+            </p>
+          </div>
+        ` : `
+          <div class="card" style="border-left: 4px solid var(--success); background: #F0FDF4; margin-bottom: 20px; padding:14px 20px;">
+            <div style="font-weight:600; color:var(--success);">Topological Dependency Order Validated</div>
+            <p style="font-size:12px; color:var(--text-muted); margin-top:2px;" class="mono">
+              Order: ${topo.order.slice(0, 8).join(' &rarr; ')}${topo.order.length > 8 ? ' ...' : ''}
+            </p>
+          </div>
+        `}
+
+        <div class="grid-2" style="grid-template-columns: 320px 1fr;">
+          <!-- Left: Conflict Clusters List -->
+          <div class="card" style="padding: 18px;">
+            <h3 style="font-size: 15px; font-weight:600; margin-bottom: 12px;">Conflict Clusters (${components.length})</h3>
+            <div style="display:flex; flex-direction:column; gap:8px; max-height: 480px; overflow-y:auto;">
+              ${components.map((c, idx) => {
+                const isSelected = idx === AppState.selectedClusterIndex;
+                return `
+                  <div onclick="selectCluster(${idx})" style="padding:10px 14px; border-radius:8px; border:1px solid ${isSelected ? 'var(--primary)' : 'var(--border)'}; background:${isSelected ? 'var(--primary-light)' : 'var(--surface)'}; cursor:pointer;">
+                    <div style="display:flex; justify-content:space-between; align-items:center;">
+                      <strong style="font-size:13px;">Cluster #${idx + 1}</strong>
+                      <span class="badge ${c.length > 1 ? 'badge-danger' : 'badge-outline'}">${c.length} events</span>
+                    </div>
+                    <div style="font-size:11px; color:var(--text-muted); margin-top:4px;" class="mono">
+                      ${c.map(e => e.id).slice(0, 3).join(', ')}${c.length > 3 ? '...' : ''}
+                    </div>
+                  </div>
+                `;
+              }).join('')}
+            </div>
+          </div>
+
+          <!-- Right: Interactive SVG Graph -->
+          <div class="card" style="padding: 18px;">
+            <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:12px;">
+              <div>
+                <h3 style="font-size: 15px; font-weight:600;">Cluster Graph Visualizer</h3>
+                <span style="font-size:12px; color:var(--text-muted);">Click any node to compute BFS ripple layers & preview rescheduling</span>
+              </div>
+              <div style="display:flex; gap:8px; font-size:11px;">
+                <span style="color:#DC2626;">■ Time Overlap</span>
+                <span style="color:#D97706;">■ Same Venue</span>
+                <span style="color:#2563EB;">■ Same Org</span>
+                <span style="color:#6B7280;">&rarr; Dependency</span>
+              </div>
+            </div>
+
+            <div class="svg-canvas-container">
+              <svg id="conflict-svg" class="graph-svg"></svg>
+            </div>
+
+            <div id="selected-ripple-details" style="margin-top:16px; display:none; padding:14px; background:#FAFAFC; border-radius:8px; border:1px solid var(--border);"></div>
+          </div>
+        </div>
+      `;
+
+      drawClusterGraph();
+    }
+
+    function selectCluster(idx) {
+      AppState.selectedClusterIndex = idx;
+      AppState.selectedEventId = null;
+      document.getElementById('selected-ripple-details').style.display = 'none';
+      renderConflicts(document.getElementById('page-content'));
+    }
+
+    function drawClusterGraph() {
+      const svg = document.getElementById('conflict-svg');
+      if (!svg || !AppState.graphData) return;
+
+      const cluster = AppState.graphData.components[AppState.selectedClusterIndex] || [];
+      const clusterIds = new Set(cluster.map(e => e.id));
+      const edges = AppState.graphData.edges.filter(e => clusterIds.has(e.source) && clusterIds.has(e.target));
+      const coloring = AppState.graphData.coloring || {};
+
+      svg.innerHTML = '';
+      const w = svg.clientWidth || 600;
+      const h = 500;
+      const cx = w / 2;
+      const cy = h / 2;
+      const r = Math.min(w, h) * 0.36;
+
+      // Position nodes in a ring layout
+      const positions = {};
+      cluster.forEach((ev, i) => {
+        const angle = (i / cluster.length) * 2 * Math.PI - Math.PI / 2;
+        positions[ev.id] = {
+          x: cx + r * Math.cos(angle),
+          y: cy + r * Math.sin(angle)
+        };
+      });
+
+      // Draw edges
+      edges.forEach(e => {
+        const p1 = positions[e.source];
+        const p2 = positions[e.target];
+        if (!p1 || !p2) return;
+
+        let strokeColor = '#CBD5E1';
+        let dash = 'none';
+        if (e.type === 'time_overlap') strokeColor = '#DC2626';
+        else if (e.type === 'venue_conflict') strokeColor = '#D97706';
+        else if (e.type === 'organizer_conflict') strokeColor = '#2563EB';
+        else if (e.type === 'dependency') {
+          strokeColor = '#6B7280';
+          dash = '4,4';
+        }
+
+        const line = document.createElementNS('http://www.w3.org/2000/svg', 'line');
+        line.setAttribute('x1', p1.x);
+        line.setAttribute('y1', p1.y);
+        line.setAttribute('x2', p2.x);
+        line.setAttribute('y2', p2.y);
+        line.setAttribute('stroke', strokeColor);
+        line.setAttribute('stroke-width', e.type === 'time_overlap' ? '2.5' : '1.5');
+        line.setAttribute('stroke-dasharray', dash);
+        svg.appendChild(line);
+      });
+
+      // Draw nodes
+      cluster.forEach(ev => {
+        const pos = positions[ev.id];
+        const isSelected = ev.id === AppState.selectedEventId;
+        const colorVal = coloring[ev.id] !== undefined ? coloring[ev.id] : 0;
+        const venueCol = VENUE_COLORS[colorVal % 6];
+
+        const g = document.createElementNS('http://www.w3.org/2000/svg', 'g');
+        g.setAttribute('style', 'cursor: pointer;');
+        g.onclick = () => handleGraphNodeClick(ev.id);
+
+        const circle = document.createElementNS('http://www.w3.org/2000/svg', 'circle');
+        circle.setAttribute('cx', pos.x);
+        circle.setAttribute('cy', pos.y);
+        circle.setAttribute('r', isSelected ? '22' : '18');
+        circle.setAttribute('fill', venueCol.bg);
+        circle.setAttribute('stroke', isSelected ? '#2563EB' : venueCol.border);
+        circle.setAttribute('stroke-width', isSelected ? '3.5' : '2');
+        g.appendChild(circle);
+
+        const text = document.createElementNS('http://www.w3.org/2000/svg', 'text');
+        text.setAttribute('x', pos.x);
+        text.setAttribute('y', pos.y + 4);
+        text.setAttribute('text-anchor', 'middle');
+        text.setAttribute('font-family', 'var(--font-mono)');
+        text.setAttribute('font-size', '10px');
+        text.setAttribute('font-weight', '600');
+        text.setAttribute('fill', venueCol.text);
+        text.textContent = ev.id.replace('EVT-', '');
+        g.appendChild(text);
+
+        // Tooltip title
+        const title = document.createElementNS('http://www.w3.org/2000/svg', 'title');
+        title.textContent = `${ev.id}: ${ev.name} (Suggested Venue #${colorVal + 1})`;
+        g.appendChild(title);
+
+        svg.appendChild(g);
+      });
+    }
+
+    async function handleGraphNodeClick(eventId) {
+      AppState.selectedEventId = eventId;
+      drawClusterGraph();
+
+      const details = document.getElementById('selected-ripple-details');
+      details.style.display = 'block';
+      details.innerHTML = `<div style="text-align:center; padding:10px; color:var(--text-muted);">Computing BFS ripple layers for ${eventId}...</div>`;
+
+      const res = await apiRequest(`/api/graph/ripple/${eventId}`);
+      if (res.ok && res.data) {
+        const ripple = res.data;
+        let layersHtml = '';
+        for (const [dist, evts] of Object.entries(ripple.layers)) {
+          layersHtml += `
+            <div style="margin-top:8px;">
+              <strong style="font-size:12px; color:var(--text-muted);">Layer ${dist} (${evts.length} events):</strong>
+              <div style="display:flex; gap:6px; flex-wrap:wrap; margin-top:4px;">
+                ${evts.map(e => `<span class="badge badge-outline mono">${e.id} (${e.name})</span>`).join('')}
+              </div>
+            </div>
+          `;
+        }
+
+        details.innerHTML = `
+          <div style="display:flex; justify-content:space-between; align-items:center;">
+            <div>
+              <strong style="font-size:14px;">Selected: <span class="mono">${eventId}</span></strong>
+              <div style="font-size:12px; color:var(--text-muted); margin-top:2px;">
+                BFS Ripple Score: <strong style="color:var(--danger);">${ripple.ripple_score}</strong> affected events
+              </div>
+            </div>
+            <button class="btn btn-primary btn-sm" onclick="openRescheduleModal('${eventId}')">Preview Reschedule</button>
+          </div>
+          ${layersHtml || '<div style="font-size:12px; color:var(--text-muted); margin-top:6px;">No outgoing ripple impact.</div>'}
+        `;
+      }
+    }
+
+    // =================================================================
+    // Reschedule Modal ("What-If" Sandbox)
+    // =================================================================
+    let rescheduleTargetEvent = null;
+
+    async function openRescheduleModal(eventId) {
+      rescheduleTargetEvent = eventId;
+      const res = await apiRequest(`/api/events/${eventId}`);
+      if (!res.ok || !res.data) {
+        showToast('Event not found', 'error');
+        return;
+      }
+      const ev = res.data;
+      document.getElementById('reschedule-modal-subtitle').textContent = `${ev.id} — ${ev.name}`;
+      document.getElementById('resched-date').value = ev.date;
+      document.getElementById('resched-st').value = ev.start_time;
+      document.getElementById('resched-et').value = ev.end_time;
+      openModal('reschedule-modal');
+      runReschedulePreview();
+    }
+
+    async function runReschedulePreview() {
+      if (!rescheduleTargetEvent) return;
+      const date = document.getElementById('resched-date').value;
+      const st = document.getElementById('resched-st').value;
+      const et = document.getElementById('resched-et').value;
+      const box = document.getElementById('reschedule-preview-result');
+
+      box.innerHTML = `<div style="text-align:center; padding:12px; color:var(--text-muted);">Forking tree & evaluating sandbox ripple...</div>`;
+
+      const res = await apiRequest(`/api/events/${rescheduleTargetEvent}/reschedule-preview`, {
+        method: 'POST',
+        body: JSON.stringify({ date, start_time: st, end_time: et })
+      });
+
+      if (res.ok && res.data) {
+        const d = res.data;
+        let altHtml = '';
+        if (d.alternative_slots && d.alternative_slots.length > 0) {
+          altHtml = `
+            <div style="margin-top:12px;">
+              <strong style="font-size:13px;">Top 3 Suggested Non-Conflicting Slots:</strong>
+              <div style="display:flex; flex-direction:column; gap:6px; margin-top:6px;">
+                ${d.alternative_slots.map((s, idx) => `
+                  <div style="display:flex; justify-content:space-between; align-items:center; padding:8px 12px; background:var(--surface); border:1px solid var(--border); border-radius:6px;">
+                    <div>
+                      <span class="mono" style="font-weight:600;">#${idx + 1}: ${s.start_time} - ${s.end_time}</span>
+                      <span style="font-size:11px; color:var(--text-muted); margin-left:8px;">Ripple: ${s.ripple_score} · Shift: ${s.displacement}m</span>
+                    </div>
+                    <button type="button" class="btn btn-secondary btn-sm" onclick="applyAlternativeSlot('${s.start_time}', '${s.end_time}')">Use this slot</button>
+                  </div>
+                `).join('')}
+              </div>
+            </div>
+          `;
+        }
+
+        box.innerHTML = `
+          <div style="display:flex; justify-content:space-between; align-items:center;">
+            <div>
+              <span class="badge ${d.conflicts.length > 0 ? 'badge-danger' : 'badge-success'}">
+                ${d.conflicts.length > 0 ? `${d.conflicts.length} Conflict(s)` : 'Zero Conflicts'}
+              </span>
+              <span style="margin-left:8px; font-size:12px; color:var(--text-muted);">
+                Ripple Impact: <strong>${d.ripple_score}</strong> events
+              </span>
+            </div>
+          </div>
+          ${d.conflicts.length > 0 ? `
+            <div style="margin-top:8px; font-size:12px; color:var(--danger);">
+              Overlaps with: ${d.conflicts.map(c => `<b>${escapeHtml(c.id)} (${c.start_time}-${c.end_time})</b>`).join(', ')}
+            </div>
+          ` : ''}
+          ${altHtml}
+        `;
+      } else {
+        box.innerHTML = `<div style="color:var(--danger); font-size:13px;">${res.error || 'Preview failed'}</div>`;
+      }
+    }
+
+    function applyAlternativeSlot(st, et) {
+      document.getElementById('resched-st').value = st;
+      document.getElementById('resched-et').value = et;
+      runReschedulePreview();
+    }
+
+    async function commitReschedule() {
+      if (!rescheduleTargetEvent) return;
+      const date = document.getElementById('resched-date').value;
+      const st = document.getElementById('resched-st').value;
+      const et = document.getElementById('resched-et').value;
+      const btn = document.getElementById('resched-commit-btn');
+
+      btn.disabled = true;
+      const res = await apiRequest(`/api/events/${rescheduleTargetEvent}/reschedule-commit`, {
+        method: 'POST',
+        body: JSON.stringify({ date, start_time: st, end_time: et })
+      });
+      btn.disabled = false;
+
+      if (res.ok) {
+        showToast(`Event ${rescheduleTargetEvent} rescheduled!`, 'success');
+        closeModal('reschedule-modal');
+        if (AppState.currentRoute === '#/schedule') renderSchedule(document.getElementById('page-content'));
+        else if (AppState.currentRoute === '#/events') loadAndRenderEventsTable();
+        else if (AppState.currentRoute === '#/conflicts') renderConflicts(document.getElementById('page-content'));
+      } else {
+        showToast(res.error || 'Failed to commit reschedule', 'error');
+      }
+    }
+
+    // =================================================================
+    // 7. Tree Visualizer Page
+    // =================================================================
+    async function renderTree(container) {
+      const [treeRes, statsRes] = await Promise.all([
+        apiRequest('/api/tree'),
+        apiRequest('/api/tree/stats')
+      ]);
+
+      AppState.treeData = treeRes.ok ? treeRes.data : null;
+      AppState.treeStats = statsRes.ok ? statsRes.data : { height: 0, node_count: 0, rotations: 0, max_gap: 0, bst_height: 0 };
+
+      container.innerHTML = `
+        <div class="page-header">
+          <div>
+            <h1>Tree Visualizer</h1>
+            <p>Interactive SVG visualizer of the persistent gap-augmented AVL tree vs baseline BST</p>
+          </div>
+          <div style="display:flex; gap:10px; align-items:center;">
+            <div style="display:flex; background:#E5E7EB; border-radius:8px; padding:2px;">
+              <button class="btn btn-sm ${AppState.treeViewMode === 'avl' ? 'btn-primary' : 'btn-secondary'}" onclick="switchTreeView('avl')" style="border:none;">AVL Tree</button>
+              <button class="btn btn-sm ${AppState.treeViewMode === 'bst' ? 'btn-primary' : 'btn-secondary'}" onclick="switchTreeView('bst')" style="border:none;">BST Baseline</button>
+            </div>
+          </div>
+        </div>
+
+        <div class="grid-2" style="grid-template-columns: 1fr 300px;">
+          <!-- SVG Canvas Area -->
+          <div class="card" style="padding: 16px;">
+            <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:12px; flex-wrap:wrap; gap:8px;">
+              <div style="display:flex; gap:6px;">
+                <button class="btn btn-secondary btn-sm" onclick="runTreeTraversal('inorder')">In-Order</button>
+                <button class="btn btn-secondary btn-sm" onclick="runTreeTraversal('preorder')">Pre-Order</button>
+                <button class="btn btn-secondary btn-sm" onclick="runTreeTraversal('postorder')">Post-Order</button>
+              </div>
+              <div style="display:flex; align-items:center; gap:8px; font-size:12px;">
+                <label>Speed:</label>
+                <input type="range" id="traversal-speed" min="100" max="800" value="350" style="width:80px;">
+              </div>
+            </div>
+
+            <div class="svg-canvas-container" style="min-height: 540px; overflow:auto;">
+              <svg id="tree-svg" style="width: 100%; min-width: 800px; height: 540px; display: block;"></svg>
+            </div>
+            <div id="traversal-display" class="mono" style="font-size:11px; color:var(--text-muted); margin-top:8px; overflow-x:auto; white-space:nowrap;"></div>
+          </div>
+
+          <!-- Side Panel: Stats & Earliest Slot Finder -->
+          <div style="display:flex; flex-direction:column; gap:16px;">
+            <div class="card" style="padding: 18px;">
+              <h3 style="font-size: 15px; font-weight:600; margin-bottom: 12px;">Tree Statistics</h3>
+              <div style="display:flex; flex-direction:column; gap:8px; font-size:13px;">
+                <div style="display:flex; justify-content:space-between;">
+                  <span style="color:var(--text-muted);">Structure:</span>
+                  <strong class="mono">${AppState.treeViewMode.toUpperCase()}</strong>
+                </div>
+                <div style="display:flex; justify-content:space-between;">
+                  <span style="color:var(--text-muted);">Current Height:</span>
+                  <strong class="mono" style="color:${AppState.treeViewMode === 'avl' ? 'var(--success)' : 'var(--danger)'};">
+                    ${AppState.treeViewMode === 'avl' ? AppState.treeStats.height : AppState.treeStats.bst_height}
+                  </strong>
+                </div>
+                <div style="display:flex; justify-content:space-between;">
+                  <span style="color:var(--text-muted);">Node Count:</span>
+                  <strong class="mono">${AppState.treeStats.node_count}</strong>
+                </div>
+                <div style="display:flex; justify-content:space-between;">
+                  <span style="color:var(--text-muted);">Rotations:</span>
+                  <strong class="mono">${AppState.treeStats.rotations}</strong>
+                </div>
+                <div style="display:flex; justify-content:space-between;">
+                  <span style="color:var(--text-muted);">Max Subtree Gap:</span>
+                  <strong class="mono">${AppState.treeStats.max_gap} min</strong>
+                </div>
+              </div>
+            </div>
+
+            <!-- Earliest Slot Finder Form -->
+            <div class="card" style="padding: 18px;">
+              <h3 style="font-size: 15px; font-weight:600; margin-bottom: 12px;">Find Earliest Slot</h3>
+              <form onsubmit="handleFindSlotSubmit(event)">
+                <div class="form-group">
+                  <label class="form-label">Duration (minutes)</label>
+                  <input type="number" id="slot-duration" class="form-control" value="60" min="15" step="15" required>
+                </div>
+                <div class="form-group">
+                  <label class="form-label">Date</label>
+                  <input type="date" id="slot-date" class="form-control" value="2026-10-26" required>
+                </div>
+                <button type="submit" class="btn btn-primary btn-sm" style="width:100%;">Search via max_gap</button>
+              </form>
+              <div id="slot-finder-results" style="margin-top:12px; font-size:12px;"></div>
+            </div>
+          </div>
+        </div>
+      `;
+
+      drawTreeSVG();
+    }
+
+    function switchTreeView(mode) {
+      AppState.treeViewMode = mode;
+      renderTree(document.getElementById('page-content'));
+    }
+
+    function drawTreeSVG() {
+      const svg = document.getElementById('tree-svg');
+      if (!svg || !AppState.treeData) return;
+
+      const nodes = AppState.treeViewMode === 'avl' ? AppState.treeData.avl_nodes : AppState.treeData.bst_nodes;
+      if (!nodes || nodes.length === 0) {
+        svg.innerHTML = `<text x="50%" y="50%" text-anchor="middle" fill="#6B7280">Tree is empty</text>`;
+        return;
+      }
+
+      svg.innerHTML = '';
+      const nodeMap = {};
+      nodes.forEach(n => nodeMap[n.id] = n);
+
+      // Find root (node not referenced as child)
+      const childIds = new Set();
+      nodes.forEach(n => {
+        if (n.left_id) childIds.add(n.left_id);
+        if (n.right_id) childIds.add(n.right_id);
+      });
+      const root = nodes.find(n => !childIds.has(n.id)) || nodes[0];
+
+      // In-order traversal to calculate X coordinates
+      let orderIndex = 0;
+      const positions = {};
+
+      function computeLayout(currId, depth) {
+        if (!currId || !nodeMap[currId]) return;
+        const n = nodeMap[currId];
+        computeLayout(n.left_id, depth + 1);
+        positions[n.id] = {
+          x: 40 + orderIndex * 46,
+          y: 40 + depth * 55,
+          node: n
+        };
+        orderIndex++;
+        computeLayout(n.right_id, depth + 1);
+      }
+      computeLayout(root.id, 0);
+
+      // Adjust svg width if needed
+      const totalWidth = Math.max(800, orderIndex * 46 + 80);
+      svg.setAttribute('width', totalWidth);
+
+      // Draw edges
+      nodes.forEach(n => {
+        const parentPos = positions[n.id];
+        if (!parentPos) return;
+
+        ['left_id', 'right_id'].forEach(childKey => {
+          const cid = n[childKey];
+          if (cid && positions[cid]) {
+            const childPos = positions[cid];
+            const line = document.createElementNS('http://www.w3.org/2000/svg', 'line');
+            line.setAttribute('x1', parentPos.x);
+            line.setAttribute('y1', parentPos.y);
+            line.setAttribute('x2', childPos.x);
+            line.setAttribute('y2', childPos.y);
+            line.setAttribute('class', 'tree-edge');
+            line.setAttribute('id', `edge-${n.id}-${cid}`);
+            svg.appendChild(line);
+          }
+        });
+      });
+
+      // Draw nodes
+      nodes.forEach(n => {
+        const pos = positions[n.id];
+        if (!pos) return;
+
+        const g = document.createElementNS('http://www.w3.org/2000/svg', 'g');
+        g.setAttribute('class', 'tree-node');
+        g.setAttribute('id', `node-g-${n.id}`);
+
+        // Balance factor badge color
+        const bf = n.balance !== undefined ? n.balance : 0;
+        let strokeCol = '#10B981';
+        let fillCol = '#ECFDF5';
+        if (bf !== 0) {
+          strokeCol = '#3B82F6';
+          fillCol = '#EFF6FF';
+        }
+        if (Math.abs(bf) > 1) { // Violates AVL (shown in red for BST)
+          strokeCol = '#EF4444';
+          fillCol = '#FEE2E2';
+        }
+
+        const circle = document.createElementNS('http://www.w3.org/2000/svg', 'circle');
+        circle.setAttribute('cx', pos.x);
+        circle.setAttribute('cy', pos.y);
+        circle.setAttribute('r', '16');
+        circle.setAttribute('fill', fillCol);
+        circle.setAttribute('stroke', strokeCol);
+        circle.setAttribute('id', `node-circle-${n.id}`);
+        g.appendChild(circle);
+
+        const text = document.createElementNS('http://www.w3.org/2000/svg', 'text');
+        text.setAttribute('x', pos.x);
+        text.setAttribute('y', pos.y + 1);
+        text.setAttribute('fill', '#111827');
+        text.textContent = n.id.replace('EVT-', '');
+        g.appendChild(text);
+
+        // Subtitle badge for balance factor
+        const bfText = document.createElementNS('http://www.w3.org/2000/svg', 'text');
+        bfText.setAttribute('x', pos.x + 12);
+        bfText.setAttribute('y', pos.y - 12);
+        bfText.setAttribute('font-size', '9px');
+        bfText.setAttribute('font-weight', '700');
+        bfText.setAttribute('fill', strokeCol);
+        bfText.textContent = bf >= 0 ? `+${bf}` : `${bf}`;
+        g.appendChild(bfText);
+
+        const title = document.createElementNS('http://www.w3.org/2000/svg', 'title');
+        title.textContent = `${n.id}: ${n.name}\nStart min: ${n.start}, End: ${n.end}\nMaxEnd: ${n.max_end}, MaxGap: ${n.max_gap}`;
+        g.appendChild(title);
+
+        svg.appendChild(g);
+      });
+    }
+
+    function runTreeTraversal(type) {
+      if (!AppState.treeData || !AppState.treeData.traversals) return;
+      const order = AppState.treeData.traversals[type] || [];
+      const speed = parseInt(document.getElementById('traversal-speed').value) || 350;
+      const display = document.getElementById('traversal-display');
+
+      display.innerHTML = `<strong>${type.toUpperCase()}:</strong> `;
+
+      // Reset any previous highlights
+      document.querySelectorAll('.tree-node circle').forEach(c => c.classList.remove('traversal-highlight'));
+
+      let idx = 0;
+      if (AppState.traversalTimer) clearInterval(AppState.traversalTimer);
+
+      AppState.traversalTimer = setInterval(() => {
+        if (idx >= order.length) {
+          clearInterval(AppState.traversalTimer);
+          return;
+        }
+
+        const nid = order[idx];
+        const circle = document.getElementById(`node-circle-${nid}`);
+        if (circle) {
+          circle.classList.add('traversal-highlight');
+          setTimeout(() => circle.classList.remove('traversal-highlight'), speed * 0.9);
+        }
+
+        const tag = document.createElement('span');
+        tag.className = 'badge badge-outline mono';
+        tag.style.marginRight = '4px';
+        tag.textContent = nid;
+        display.appendChild(tag);
+
+        idx++;
+      }, speed);
+    }
+
+    async function handleFindSlotSubmit(e) {
+      e.preventDefault();
+      const dur = document.getElementById('slot-duration').value;
+      const date = document.getElementById('slot-date').value;
+      const res = await apiRequest(`/api/slots/suggest?duration=${dur}&date=${date}`);
+      const box = document.getElementById('slot-finder-results');
+
+      if (res.ok && res.data && res.data.length > 0) {
+        box.innerHTML = `
+          <div style="font-weight:600; color:var(--success); margin-bottom:4px;">Slots Discovered:</div>
+          <div style="display:flex; flex-direction:column; gap:4px;">
+            ${res.data.map(s => `
+              <div class="mono" style="padding:4px 8px; background:var(--bg); border-radius:4px;">
+                ${s.start_time} - ${s.end_time}
+              </div>
+            `).join('')}
+          </div>
+        `;
+      } else {
+        box.innerHTML = `<div style="color:var(--text-muted);">No free slot found for that duration on ${date}.</div>`;
+      }
+    }
+
+    // =================================================================
+    // 8. Benchmarks Page
+    // =================================================================
+    let benchmarkActiveSuite = 'tree';
+    let benchmarkLogScale = false;
+
+    async function renderBenchmarks(container) {
+      container.innerHTML = `
+        <div class="page-header">
+          <div>
+            <h1>Algorithm Benchmarks</h1>
+            <p>Empirical performance analysis: AVL vs BST, Sorting, Searching, and Interval slot algorithms</p>
+          </div>
+          <div style="display:flex; gap:10px; align-items:center;">
+            <label style="font-size:13px; display:flex; align-items:center; gap:6px; cursor:pointer;">
+              <input type="checkbox" id="bench-log-toggle" ${benchmarkLogScale ? 'checked' : ''} onchange="toggleLogScale(this.checked)">
+              <span>Log scale</span>
+            </label>
+            <button class="btn btn-secondary btn-sm" onclick="exportBenchmarkCSV()">Export CSV</button>
+          </div>
+        </div>
+
+        <!-- Suite Selector Tabs -->
+        <div class="card" style="padding: 12px; margin-bottom: 20px;">
+          <div style="display:flex; gap:8px; flex-wrap:wrap;">
+            <button class="btn btn-sm ${benchmarkActiveSuite === 'tree' ? 'btn-primary' : 'btn-secondary'}" onclick="selectBenchSuite('tree')">1. AVL vs BST</button>
+            <button class="btn btn-sm ${benchmarkActiveSuite === 'search' ? 'btn-primary' : 'btn-secondary'}" onclick="selectBenchSuite('search')">2. Search Comparison</button>
+            <button class="btn btn-sm ${benchmarkActiveSuite === 'sort' ? 'btn-primary' : 'btn-secondary'}" onclick="selectBenchSuite('sort')">3. Sorting Algorithms</button>
+            <button class="btn btn-sm ${benchmarkActiveSuite === 'slot' ? 'btn-primary' : 'btn-secondary'}" onclick="selectBenchSuite('slot')">4. Slot Finder vs Scan</button>
+          </div>
+        </div>
+
+        <div id="benchmark-content-area">
+          <div style="text-align:center; padding: 40px; color:var(--text-muted);">Running benchmark suite...</div>
+        </div>
+      `;
+
+      loadBenchmarkData(benchmarkActiveSuite);
+    }
+
+    function selectBenchSuite(suite) {
+      benchmarkActiveSuite = suite;
+      renderBenchmarks(document.getElementById('page-content'));
+    }
+
+    function toggleLogScale(checked) {
+      benchmarkLogScale = checked;
+      loadBenchmarkData(benchmarkActiveSuite);
+    }
+
+    let lastBenchmarkData = null;
+
+    async function loadBenchmarkData(suite) {
+      const area = document.getElementById('benchmark-content-area');
+      area.innerHTML = `<div style="text-align:center; padding: 50px 0; color:var(--text-muted);">Executing pure Python benchmark suite '${suite}'... Please hold.</div>`;
+
+      const res = await apiRequest(`/api/benchmark?suite=${suite}`);
+      if (!res.ok || !res.data) {
+        area.innerHTML = `<div class="card" style="color:var(--danger);">Benchmark failed: ${res.error}</div>`;
+        return;
+      }
+
+      lastBenchmarkData = res.data;
+      const data = res.data.results;
+      const conclusion = res.data.conclusion;
+
+      area.innerHTML = `
+        <div class="card">
+          <h3 style="font-size: 16px; font-weight:600; margin-bottom: 12px;">Visual Performance Chart</h3>
+          <div class="svg-canvas-container" style="min-height: 380px;">
+            <svg id="benchmark-chart-svg" style="width:100%; height:380px; display:block;"></svg>
+          </div>
+          <div style="margin-top: 14px; padding: 12px 16px; background:#F0FDF4; border:1px solid #BBF7D0; border-radius:8px; font-size:13px; color:#166534;">
+            <strong>Empirical Finding:</strong> ${escapeHtml(conclusion)}
+          </div>
+        </div>
+
+        <div class="card">
+          <h3 style="font-size: 16px; font-weight:600; margin-bottom: 14px;">Raw Benchmark Metrics</h3>
+          <div class="table-container" id="benchmark-raw-table"></div>
+        </div>
+      `;
+
+      drawBenchmarkChart(suite, data);
+      renderRawMetricsTable(suite, data);
+    }
+
+    function drawBenchmarkChart(suite, data) {
+      const svg = document.getElementById('benchmark-chart-svg');
+      if (!svg) return;
+      svg.innerHTML = '';
+
+      const w = svg.clientWidth || 700;
+      const h = 380;
+      const padL = 60, padR = 40, padT = 30, padB = 40;
+      const chartW = w - padL - padR;
+      const chartH = h - padT - padB;
+
+      if (suite === 'tree') {
+        // Draw Height Comparison across sorted pattern
+        const sizes = data.sizes;
+        const sortedData = data.data.sorted;
+        const avlH = sortedData.avl_height;
+        const bstH = sortedData.bst_height;
+
+        let maxVal = Math.max(...bstH, ...avlH, 1);
+        if (benchmarkLogScale) maxVal = Math.log10(maxVal + 1);
+
+        // Axes
+        drawAxes(svg, padL, padT, chartW, chartH, sizes, maxVal);
+
+        // Polylines
+        drawLinePlot(svg, padL, padT, chartW, chartH, sizes.length, bstH, maxVal, '#DC2626', 'BST Height (Sorted)');
+        drawLinePlot(svg, padL, padT, chartW, chartH, sizes.length, avlH, maxVal, '#16A34A', 'AVL Height (Sorted)');
+
+      } else if (suite === 'sort') {
+        const sizes = data.sizes;
+        const mrg = data.merge_sort_ms;
+        const ins = data.insertion_sort_ms;
+        const bub = data.bubble_sort_ms;
+
+        let maxVal = Math.max(...bub, ...ins, ...mrg, 1);
+        if (benchmarkLogScale) maxVal = Math.log10(maxVal + 1);
+
+        drawAxes(svg, padL, padT, chartW, chartH, sizes, maxVal);
+        drawLinePlot(svg, padL, padT, chartW, chartH, sizes.length, bub, maxVal, '#DC2626', 'Bubble Sort');
+        drawLinePlot(svg, padL, padT, chartW, chartH, sizes.length, ins, maxVal, '#D97706', 'Insertion Sort');
+        drawLinePlot(svg, padL, padT, chartW, chartH, sizes.length, mrg, maxVal, '#16A34A', 'Merge Sort');
+
+      } else if (suite === 'search') {
+        const sizes = data.sizes;
+        const lin = data.linear_search_ms;
+        const bin = data.binary_search_ms;
+        const avl = data.avl_search_ms;
+        const hsh = data.hash_lookup_ms;
+
+        let maxVal = Math.max(...lin, 0.05);
+        if (benchmarkLogScale) maxVal = Math.log10(maxVal + 1);
+
+        drawAxes(svg, padL, padT, chartW, chartH, sizes, maxVal);
+        drawLinePlot(svg, padL, padT, chartW, chartH, sizes.length, lin, maxVal, '#DC2626', 'Linear Search');
+        drawLinePlot(svg, padL, padT, chartW, chartH, sizes.length, avl, maxVal, '#2563EB', 'AVL Search');
+        drawLinePlot(svg, padL, padT, chartW, chartH, sizes.length, bin, maxVal, '#D97706', 'Binary Search');
+        drawLinePlot(svg, padL, padT, chartW, chartH, sizes.length, hsh, maxVal, '#16A34A', 'Hash Lookup');
+
+      } else if (suite === 'slot') {
+        const sizes = data.sizes;
+        const prn = data.avl_gap_pruned_ms;
+        const scn = data.linear_scan_ms;
+
+        let maxVal = Math.max(...scn, ...prn, 1);
+        if (benchmarkLogScale) maxVal = Math.log10(maxVal + 1);
+
+        drawAxes(svg, padL, padT, chartW, chartH, sizes, maxVal);
+        drawLinePlot(svg, padL, padT, chartW, chartH, sizes.length, scn, maxVal, '#DC2626', 'Linear Scan');
+        drawLinePlot(svg, padL, padT, chartW, chartH, sizes.length, prn, maxVal, '#16A34A', 'AVL max_gap Pruned');
+      }
+    }
+
+    function drawAxes(svg, padL, padT, w, h, xLabels, maxVal) {
+      // Y axis
+      const yLine = document.createElementNS('http://www.w3.org/2000/svg', 'line');
+      yLine.setAttribute('x1', padL); yLine.setAttribute('y1', padT);
+      yLine.setAttribute('x2', padL); yLine.setAttribute('y2', padT + h);
+      yLine.setAttribute('stroke', '#CBD5E1');
+      svg.appendChild(yLine);
+
+      // X axis
+      const xLine = document.createElementNS('http://www.w3.org/2000/svg', 'line');
+      xLine.setAttribute('x1', padL); yLine.setAttribute('y1', padT + h);
+      xLine.setAttribute('x2', padL + w); xLine.setAttribute('y2', padT + h);
+      xLine.setAttribute('stroke', '#CBD5E1');
+      svg.appendChild(xLine);
+
+      // Grid lines & labels
+      for (let i = 0; i <= 4; i++) {
+        const y = padT + h - (i / 4) * h;
+        const val = benchmarkLogScale ? Math.pow(10, (i / 4) * maxVal) - 1 : (i / 4) * maxVal;
+        const txt = document.createElementNS('http://www.w3.org/2000/svg', 'text');
+        txt.setAttribute('x', padL - 8);
+        txt.setAttribute('y', y + 4);
+        txt.setAttribute('text-anchor', 'end');
+        txt.setAttribute('font-size', '10px');
+        txt.setAttribute('fill', '#6B7280');
+        txt.textContent = val > 100 ? Math.round(val) : val.toFixed(2);
+        svg.appendChild(txt);
+
+        const grid = document.createElementNS('http://www.w3.org/2000/svg', 'line');
+        grid.setAttribute('x1', padL); grid.setAttribute('y1', y);
+        grid.setAttribute('x2', padL + w); grid.setAttribute('y2', y);
+        grid.setAttribute('stroke', '#F1F5F9');
+        grid.setAttribute('stroke-dasharray', '2,2');
+        svg.appendChild(grid);
+      }
+
+      // X labels
+      xLabels.forEach((lbl, i) => {
+        const x = padL + (i / (xLabels.length - 1)) * w;
+        const txt = document.createElementNS('http://www.w3.org/2000/svg', 'text');
+        txt.setAttribute('x', x);
+        txt.setAttribute('y', padT + h + 20);
+        txt.setAttribute('text-anchor', 'middle');
+        txt.setAttribute('font-size', '10px');
+        txt.setAttribute('fill', '#6B7280');
+        txt.textContent = lbl;
+        svg.appendChild(txt);
+      });
+    }
+
+    function drawLinePlot(svg, padL, padT, w, h, count, points, maxVal, color, label) {
+      let d = '';
+      points.forEach((val, i) => {
+        const normalized = benchmarkLogScale ? Math.log10(val + 1) : val;
+        const x = padL + (i / (count - 1)) * w;
+        const y = padT + h - (normalized / maxVal) * h;
+        d += (i === 0 ? `M ${x} ${y}` : ` L ${x} ${y}`);
+
+        const pt = document.createElementNS('http://www.w3.org/2000/svg', 'circle');
+        pt.setAttribute('cx', x);
+        pt.setAttribute('cy', y);
+        pt.setAttribute('r', '4');
+        pt.setAttribute('fill', color);
+        svg.appendChild(pt);
+      });
+
+      const path = document.createElementNS('http://www.w3.org/2000/svg', 'path');
+      path.setAttribute('d', d);
+      path.setAttribute('fill', 'none');
+      path.setAttribute('stroke', color);
+      path.setAttribute('stroke-width', '2.5');
+      svg.appendChild(path);
+    }
+
+    function renderRawMetricsTable(suite, data) {
+      const el = document.getElementById('benchmark-raw-table');
+      if (!el) return;
+
+      if (suite === 'tree') {
+        const p = data.data.sorted;
+        el.innerHTML = `
+          <table class="data-table mono">
+            <thead>
+              <tr><th>Size (N)</th><th>AVL Height</th><th>BST Height</th><th>AVL Insert (ms)</th><th>BST Insert (ms)</th><th>AVL Conflict (ms)</th></tr>
+            </thead>
+            <tbody>
+              ${data.sizes.map((n, i) => `
+                <tr>
+                  <td>${n}</td>
+                  <td style="color:var(--success); font-weight:600;">${p.avl_height[i]}</td>
+                  <td style="color:var(--danger); font-weight:600;">${p.bst_height[i]}</td>
+                  <td>${p.avl_insert_ms[i]}</td>
+                  <td>${p.bst_insert_ms[i]}</td>
+                  <td>${p.avl_conflict_ms[i]}</td>
+                </tr>
+              `).join('')}
+            </tbody>
+          </table>
+        `;
+      } else if (suite === 'sort') {
+        el.innerHTML = `
+          <table class="data-table mono">
+            <thead>
+              <tr><th>Size (N)</th><th>Merge Sort (ms)</th><th>Insertion Sort (ms)</th><th>Bubble Sort (ms)</th><th>Selection Sort (ms)</th></tr>
+            </thead>
+            <tbody>
+              ${data.sizes.map((n, i) => `
+                <tr>
+                  <td>${n}</td>
+                  <td style="color:var(--success); font-weight:600;">${data.merge_sort_ms[i]}</td>
+                  <td>${data.insertion_sort_ms[i]}</td>
+                  <td>${data.bubble_sort_ms[i]}</td>
+                  <td>${data.selection_sort_ms[i]}</td>
+                </tr>
+              `).join('')}
+            </tbody>
+          </table>
+        `;
+      } else if (suite === 'search') {
+        el.innerHTML = `
+          <table class="data-table mono">
+            <thead>
+              <tr><th>Size (N)</th><th>Hash Lookup (ms)</th><th>AVL Search (ms)</th><th>Binary Search (ms)</th><th>Linear Search (ms)</th></tr>
+            </thead>
+            <tbody>
+              ${data.sizes.map((n, i) => `
+                <tr>
+                  <td>${n}</td>
+                  <td style="color:var(--success); font-weight:600;">${data.hash_lookup_ms[i]}</td>
+                  <td>${data.avl_search_ms[i]}</td>
+                  <td>${data.binary_search_ms[i]}</td>
+                  <td>${data.linear_search_ms[i]}</td>
+                </tr>
+              `).join('')}
+            </tbody>
+          </table>
+        `;
+      } else if (suite === 'slot') {
+        el.innerHTML = `
+          <table class="data-table mono">
+            <thead>
+              <tr><th>Size (N)</th><th>AVL max_gap Pruned (ms)</th><th>Linear Scan (ms)</th><th>Speedup</th></tr>
+            </thead>
+            <tbody>
+              ${data.sizes.map((n, i) => {
+                const spd = (data.linear_scan_ms[i] / (data.avl_gap_pruned_ms[i] || 0.001)).toFixed(1);
+                return `
+                  <tr>
+                    <td>${n}</td>
+                    <td style="color:var(--success); font-weight:600;">${data.avl_gap_pruned_ms[i]}</td>
+                    <td>${data.linear_scan_ms[i]}</td>
+                    <td style="font-weight:700;">${spd}x</td>
+                  </tr>
+                `;
+              }).join('')}
+            </tbody>
+          </table>
+        `;
+      }
+    }
+
+    function exportBenchmarkCSV() {
+      if (!lastBenchmarkData) {
+        showToast('No benchmark data to export', 'error');
+        return;
+      }
+      const json = JSON.stringify(lastBenchmarkData.results, null, 2);
+      const blob = new Blob([json], { type: 'application/json' });
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = `chronograph_benchmark_${benchmarkActiveSuite}.json`;
+      a.click();
+      URL.revokeObjectURL(url);
+      showToast('Exported benchmark dataset!', 'success');
+    }
+
+    // Helper utilities
+    function escapeHtml(str) {
+      if (!str) return '';
+      return String(str)
+        .replace(/&/g, '&amp;')
+        .replace(/</g, '&lt;')
+        .replace(/>/g, '&gt;')
+        .replace(/"/g, '&quot;')
+        .replace(/'/g, '&#039;');
+    }
+
+    function escapeQuotes(str) {
+      if (!str) return '';
+      return String(str).replace(/'/g, "\\'").replace(/"/g, '&quot;');
+    }
+
+    // Initialize on page load
+    document.addEventListener('DOMContentLoaded', initApp);
+  </script>
+</body>
+</html>
