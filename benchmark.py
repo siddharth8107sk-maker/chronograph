@@ -301,25 +301,26 @@ def run_slot_benchmark(sizes: List[int] = [100, 500, 1000, 2000]) -> Dict[str, A
         for ev in events:
             avl = avl.insert(ev, ev['start'], ev['end'])
 
-        duration = 60
-        day_start = 1000
-        day_end = 500000
-        reps = 50
+        mid_event = events[n // 2]
+        day_start = max(0, mid_event['start'] - 120)
+        day_end = day_start + 720  # standard 12-hour operational window (08:00 - 20:00)
+        duration = 45
+        reps = 100
 
-        # AVL slot search
+        # AVL slot search with interval-pruned subtree traversal
         t0 = time.perf_counter()
         for _ in range(reps):
             avl.find_earliest_slot(duration, day_start, day_start, day_end)
         results['avl_gap_pruned_ms'].append(round((time.perf_counter() - t0) * 1000 / reps, 4))
 
-        # Naive linear scan: test every 15-minute slot from day_start to day_end against all events
+        # Naive linear scan: test candidate slots across unindexed events
         t0 = time.perf_counter()
         for _ in range(reps):
             slot = day_start
             found = False
-            while slot + duration <= day_start + 5000:
+            while slot + duration <= day_end:
                 conflict = False
-                for ev in events[:min(len(events), 200)]:
+                for ev in events:
                     if max(slot, ev['start']) < min(slot + duration, ev['end']):
                         conflict = True
                         break

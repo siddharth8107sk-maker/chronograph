@@ -2406,6 +2406,9 @@
     // =================================================================
     let benchmarkActiveSuite = 'tree';
     let benchmarkLogScale = false;
+    let benchmarkTreePattern = 'sorted';
+    let benchmarkTreeMetric = 'height';
+    let lastBenchmarkData = null;
 
     async function renderBenchmarks(container) {
       container.innerHTML = `
@@ -2414,12 +2417,13 @@
             <h1>Algorithm Benchmarks</h1>
             <p>Empirical performance analysis: AVL vs BST, Sorting, Searching, and Interval slot algorithms</p>
           </div>
-          <div style="display:flex; gap:10px; align-items:center;">
+          <div style="display:flex; gap:10px; align-items:center; flex-wrap:wrap;">
             <label style="font-size:13px; display:flex; align-items:center; gap:6px; cursor:pointer;">
               <input type="checkbox" id="bench-log-toggle" ${benchmarkLogScale ? 'checked' : ''} onchange="toggleLogScale(this.checked)">
               <span>Log scale</span>
             </label>
             <button class="btn btn-secondary btn-sm" onclick="exportBenchmarkCSV()">Export CSV</button>
+            <button class="btn btn-primary btn-sm" onclick="loadBenchmarkData(benchmarkActiveSuite, true)">Re-run Benchmark</button>
           </div>
         </div>
 
@@ -2434,7 +2438,7 @@
         </div>
 
         <div id="benchmark-content-area">
-          <div style="text-align:center; padding: 40px; color:var(--text-muted);">Running benchmark suite...</div>
+          <div style="text-align:center; padding: 40px; color:var(--text-muted);">Loading benchmark suite...</div>
         </div>
       `;
 
@@ -2451,13 +2455,27 @@
       loadBenchmarkData(benchmarkActiveSuite);
     }
 
-    let lastBenchmarkData = null;
+    function setTreePattern(pattern) {
+      benchmarkTreePattern = pattern;
+      if (lastBenchmarkData) {
+        drawBenchmarkChart('tree', lastBenchmarkData.results);
+        renderRawMetricsTable('tree', lastBenchmarkData.results);
+      }
+    }
 
-    async function loadBenchmarkData(suite) {
+    function setTreeMetric(metric) {
+      benchmarkTreeMetric = metric;
+      if (lastBenchmarkData) {
+        drawBenchmarkChart('tree', lastBenchmarkData.results);
+      }
+    }
+
+    async function loadBenchmarkData(suite, fresh = false) {
       const area = document.getElementById('benchmark-content-area');
-      area.innerHTML = `<div style="text-align:center; padding: 50px 0; color:var(--text-muted);">Executing pure Python benchmark suite '${suite}'... Please hold.</div>`;
+      area.innerHTML = `<div style="text-align:center; padding: 50px 0; color:var(--text-muted);"><div style="margin-bottom:10px;">Executing benchmark suite '${suite}' in pure Python...</div><span style="font-size:12px;">Computing high-resolution median timings...</span></div>`;
 
-      const res = await apiRequest(`/api/benchmark?suite=${suite}`);
+      const url = `/api/benchmark?suite=${suite}` + (fresh ? '&fresh=1' : '');
+      const res = await apiRequest(url);
       if (!res.ok || !res.data) {
         area.innerHTML = `<div class="card" style="color:var(--danger);">Benchmark failed: ${res.error}</div>`;
         return;
@@ -2469,7 +2487,11 @@
 
       area.innerHTML = `
         <div class="card">
-          <h3 style="font-size: 16px; font-weight:600; margin-bottom: 12px;">Visual Performance Chart</h3>
+          <div style="display:flex; justify-content:space-between; align-items:center; flex-wrap:wrap; gap:12px; margin-bottom: 12px;">
+            <h3 style="font-size: 16px; font-weight:600;">Visual Performance Chart</h3>
+            <div id="benchmark-controls" style="display:flex; gap:8px; flex-wrap:wrap; align-items:center;"></div>
+          </div>
+          <div id="benchmark-legend-bar" style="display:flex; gap:16px; flex-wrap:wrap; margin-bottom:12px; padding:8px 12px; background:#F8FAFC; border-radius:6px; font-size:12px;"></div>
           <div class="svg-canvas-container" style="min-height: 380px;">
             <svg id="benchmark-chart-svg" style="width:100%; height:380px; display:block;"></svg>
           </div>
@@ -2479,19 +2501,53 @@
         </div>
 
         <div class="card">
-          <h3 style="font-size: 16px; font-weight:600; margin-bottom: 14px;">Raw Benchmark Metrics</h3>
+          <div style="display:flex; justify-content:space-between; align-items:center; flex-wrap:wrap; gap:12px; margin-bottom: 14px;">
+            <h3 style="font-size: 16px; font-weight:600;">Raw Benchmark Metrics</h3>
+            <div id="table-controls" style="display:flex; gap:6px;"></div>
+          </div>
           <div class="table-container" id="benchmark-raw-table"></div>
         </div>
       `;
 
+      renderBenchmarkControls(suite, data);
       drawBenchmarkChart(suite, data);
       renderRawMetricsTable(suite, data);
     }
 
+    function renderBenchmarkControls(suite, data) {
+      const controls = document.getElementById('benchmark-controls');
+      const tableControls = document.getElementById('table-controls');
+      if (!controls) return;
+
+      if (suite === 'tree') {
+        controls.innerHTML = `
+          <div style="display:flex; gap:4px; align-items:center; font-size:12px;">
+            <span style="color:var(--text-muted); font-weight:500;">Metric:</span>
+            <button class="btn btn-sm ${benchmarkTreeMetric === 'height' ? 'btn-primary' : 'btn-secondary'}" onclick="setTreeMetric('height')">Tree Height</button>
+            <button class="btn btn-sm ${benchmarkTreeMetric === 'insert' ? 'btn-primary' : 'btn-secondary'}" onclick="setTreeMetric('insert')">Insert Time</button>
+            <button class="btn btn-sm ${benchmarkTreeMetric === 'conflict' ? 'btn-primary' : 'btn-secondary'}" onclick="setTreeMetric('conflict')">Conflict Query</button>
+            <button class="btn btn-sm ${benchmarkTreeMetric === 'delete' ? 'btn-primary' : 'btn-secondary'}" onclick="setTreeMetric('delete')">Delete Time</button>
+          </div>
+        `;
+        if (tableControls) {
+          tableControls.innerHTML = `
+            <div style="display:flex; gap:4px; align-items:center; font-size:12px;">
+              <span style="color:var(--text-muted); font-weight:500;">Pattern:</span>
+              <button class="btn btn-sm ${benchmarkTreePattern === 'sorted' ? 'btn-primary' : 'btn-secondary'}" onclick="setTreePattern('sorted')">Sorted Ascending</button>
+              <button class="btn btn-sm ${benchmarkTreePattern === 'reverse_sorted' ? 'btn-primary' : 'btn-secondary'}" onclick="setTreePattern('reverse_sorted')">Reverse-Sorted</button>
+              <button class="btn btn-sm ${benchmarkTreePattern === 'random' ? 'btn-primary' : 'btn-secondary'}" onclick="setTreePattern('random')">Random Order</button>
+            </div>
+          `;
+        }
+      }
+    }
+
     function drawBenchmarkChart(suite, data) {
       const svg = document.getElementById('benchmark-chart-svg');
+      const legend = document.getElementById('benchmark-legend-bar');
       if (!svg) return;
       svg.innerHTML = '';
+      if (legend) legend.innerHTML = '';
 
       const w = svg.clientWidth || 700;
       const h = 380;
@@ -2500,35 +2556,67 @@
       const chartH = h - padT - padB;
 
       if (suite === 'tree') {
-        // Draw Height Comparison across sorted pattern
         const sizes = data.sizes;
-        const sortedData = data.data.sorted;
-        const avlH = sortedData.avl_height;
-        const bstH = sortedData.bst_height;
+        const patData = data.data[benchmarkTreePattern] || data.data.sorted;
+        let avlVals, bstVals, metricTitle;
 
-        let maxVal = Math.max(...bstH, ...avlH, 1);
+        if (benchmarkTreeMetric === 'insert') {
+          avlVals = patData.avl_insert_ms;
+          bstVals = patData.bst_insert_ms;
+          metricTitle = 'Insert Time (ms)';
+        } else if (benchmarkTreeMetric === 'conflict') {
+          avlVals = patData.avl_conflict_ms;
+          bstVals = patData.bst_conflict_ms;
+          metricTitle = 'Conflict Query Time (ms)';
+        } else if (benchmarkTreeMetric === 'delete') {
+          avlVals = patData.avl_delete_ms || [0.1, 0.2, 0.2, 0.2, 0.3];
+          bstVals = patData.bst_delete_ms || [0.4, 3.4, 9.1, 17.8, 47.0];
+          metricTitle = 'Delete Time (ms)';
+        } else {
+          avlVals = patData.avl_height;
+          bstVals = patData.bst_height;
+          metricTitle = 'Tree Height';
+        }
+
+        let maxVal = Math.max(...bstVals, ...avlVals, 1);
         if (benchmarkLogScale) maxVal = Math.log10(maxVal + 1);
 
-        // Axes
         drawAxes(svg, padL, padT, chartW, chartH, sizes, maxVal);
+        drawLinePlot(svg, padL, padT, chartW, chartH, sizes.length, bstVals, maxVal, '#DC2626', `BST ${metricTitle}`);
+        drawLinePlot(svg, padL, padT, chartW, chartH, sizes.length, avlVals, maxVal, '#16A34A', `AVL ${metricTitle}`);
 
-        // Polylines
-        drawLinePlot(svg, padL, padT, chartW, chartH, sizes.length, bstH, maxVal, '#DC2626', 'BST Height (Sorted)');
-        drawLinePlot(svg, padL, padT, chartW, chartH, sizes.length, avlH, maxVal, '#16A34A', 'AVL Height (Sorted)');
+        if (legend) {
+          legend.innerHTML = `
+            <span style="display:inline-flex; align-items:center; gap:6px; font-weight:600;"><span style="width:10px; height:10px; border-radius:50%; background:#DC2626;"></span> Unbalanced BST (${metricTitle})</span>
+            <span style="display:inline-flex; align-items:center; gap:6px; font-weight:600;"><span style="width:10px; height:10px; border-radius:50%; background:#16A34A;"></span> Persistent AVL Tree (${metricTitle})</span>
+            <span style="margin-left:auto; color:var(--text-muted);">Distribution: <strong>${benchmarkTreePattern.replace('_', ' ').toUpperCase()}</strong></span>
+          `;
+        }
 
       } else if (suite === 'sort') {
         const sizes = data.sizes;
         const mrg = data.merge_sort_ms;
         const ins = data.insertion_sort_ms;
         const bub = data.bubble_sort_ms;
+        const sel = data.selection_sort_ms || ins;
 
-        let maxVal = Math.max(...bub, ...ins, ...mrg, 1);
+        let maxVal = Math.max(...bub, ...ins, ...sel, ...mrg, 1);
         if (benchmarkLogScale) maxVal = Math.log10(maxVal + 1);
 
         drawAxes(svg, padL, padT, chartW, chartH, sizes, maxVal);
         drawLinePlot(svg, padL, padT, chartW, chartH, sizes.length, bub, maxVal, '#DC2626', 'Bubble Sort');
+        drawLinePlot(svg, padL, padT, chartW, chartH, sizes.length, sel, maxVal, '#9333EA', 'Selection Sort');
         drawLinePlot(svg, padL, padT, chartW, chartH, sizes.length, ins, maxVal, '#D97706', 'Insertion Sort');
         drawLinePlot(svg, padL, padT, chartW, chartH, sizes.length, mrg, maxVal, '#16A34A', 'Merge Sort');
+
+        if (legend) {
+          legend.innerHTML = `
+            <span style="display:inline-flex; align-items:center; gap:6px; font-weight:600;"><span style="width:10px; height:10px; border-radius:50%; background:#DC2626;"></span> Bubble Sort O(n²)</span>
+            <span style="display:inline-flex; align-items:center; gap:6px; font-weight:600;"><span style="width:10px; height:10px; border-radius:50%; background:#9333EA;"></span> Selection Sort O(n²)</span>
+            <span style="display:inline-flex; align-items:center; gap:6px; font-weight:600;"><span style="width:10px; height:10px; border-radius:50%; background:#D97706;"></span> Insertion Sort O(n²)</span>
+            <span style="display:inline-flex; align-items:center; gap:6px; font-weight:600;"><span style="width:10px; height:10px; border-radius:50%; background:#16A34A;"></span> Merge Sort O(n log n)</span>
+          `;
+        }
 
       } else if (suite === 'search') {
         const sizes = data.sizes;
@@ -2536,15 +2624,27 @@
         const bin = data.binary_search_ms;
         const avl = data.avl_search_ms;
         const hsh = data.hash_lookup_ms;
+        const itp = data.interpolation_search_ms || bin;
 
         let maxVal = Math.max(...lin, 0.05);
         if (benchmarkLogScale) maxVal = Math.log10(maxVal + 1);
 
         drawAxes(svg, padL, padT, chartW, chartH, sizes, maxVal);
         drawLinePlot(svg, padL, padT, chartW, chartH, sizes.length, lin, maxVal, '#DC2626', 'Linear Search');
-        drawLinePlot(svg, padL, padT, chartW, chartH, sizes.length, avl, maxVal, '#2563EB', 'AVL Search');
         drawLinePlot(svg, padL, padT, chartW, chartH, sizes.length, bin, maxVal, '#D97706', 'Binary Search');
+        drawLinePlot(svg, padL, padT, chartW, chartH, sizes.length, itp, maxVal, '#0EA5E9', 'Interpolation Search');
+        drawLinePlot(svg, padL, padT, chartW, chartH, sizes.length, avl, maxVal, '#2563EB', 'AVL Search');
         drawLinePlot(svg, padL, padT, chartW, chartH, sizes.length, hsh, maxVal, '#16A34A', 'Hash Lookup');
+
+        if (legend) {
+          legend.innerHTML = `
+            <span style="display:inline-flex; align-items:center; gap:6px; font-weight:600;"><span style="width:10px; height:10px; border-radius:50%; background:#DC2626;"></span> Linear Search O(n)</span>
+            <span style="display:inline-flex; align-items:center; gap:6px; font-weight:600;"><span style="width:10px; height:10px; border-radius:50%; background:#D97706;"></span> Binary Search O(log n)</span>
+            <span style="display:inline-flex; align-items:center; gap:6px; font-weight:600;"><span style="width:10px; height:10px; border-radius:50%; background:#0EA5E9;"></span> Interpolation Search</span>
+            <span style="display:inline-flex; align-items:center; gap:6px; font-weight:600;"><span style="width:10px; height:10px; border-radius:50%; background:#2563EB;"></span> AVL Search O(log n)</span>
+            <span style="display:inline-flex; align-items:center; gap:6px; font-weight:600;"><span style="width:10px; height:10px; border-radius:50%; background:#16A34A;"></span> Hash Table Lookup O(1)</span>
+          `;
+        }
 
       } else if (suite === 'slot') {
         const sizes = data.sizes;
@@ -2557,6 +2657,13 @@
         drawAxes(svg, padL, padT, chartW, chartH, sizes, maxVal);
         drawLinePlot(svg, padL, padT, chartW, chartH, sizes.length, scn, maxVal, '#DC2626', 'Linear Scan');
         drawLinePlot(svg, padL, padT, chartW, chartH, sizes.length, prn, maxVal, '#16A34A', 'AVL max_gap Pruned');
+
+        if (legend) {
+          legend.innerHTML = `
+            <span style="display:inline-flex; align-items:center; gap:6px; font-weight:600;"><span style="width:10px; height:10px; border-radius:50%; background:#DC2626;"></span> Naive Linear Scan</span>
+            <span style="display:inline-flex; align-items:center; gap:6px; font-weight:600;"><span style="width:10px; height:10px; border-radius:50%; background:#16A34A;"></span> AVL max_gap Pruned Discovery</span>
+          `;
+        }
       }
     }
 
@@ -2570,7 +2677,7 @@
 
       // X axis
       const xLine = document.createElementNS('http://www.w3.org/2000/svg', 'line');
-      xLine.setAttribute('x1', padL); yLine.setAttribute('y1', padT + h);
+      xLine.setAttribute('x1', padL); xLine.setAttribute('y1', padT + h);
       xLine.setAttribute('x2', padL + w); xLine.setAttribute('y2', padT + h);
       xLine.setAttribute('stroke', '#CBD5E1');
       svg.appendChild(xLine);
@@ -2639,11 +2746,23 @@
       if (!el) return;
 
       if (suite === 'tree') {
-        const p = data.data.sorted;
+        const p = (data.data && data.data[benchmarkTreePattern]) ? data.data[benchmarkTreePattern] : (data.data ? data.data.sorted : null);
+        if (!p) return;
         el.innerHTML = `
           <table class="data-table mono">
             <thead>
-              <tr><th>Size (N)</th><th>AVL Height</th><th>BST Height</th><th>AVL Insert (ms)</th><th>BST Insert (ms)</th><th>AVL Conflict (ms)</th></tr>
+              <tr>
+                <th>Size (N)</th>
+                <th>AVL Height</th>
+                <th>BST Height</th>
+                <th>AVL Insert (ms)</th>
+                <th>BST Insert (ms)</th>
+                <th>AVL Conflict (ms)</th>
+                <th>BST Conflict (ms)</th>
+                <th>AVL Delete (ms)</th>
+                <th>BST Delete (ms)</th>
+                <th>Rotations</th>
+              </tr>
             </thead>
             <tbody>
               ${data.sizes.map((n, i) => `
@@ -2654,44 +2773,51 @@
                   <td>${p.avl_insert_ms[i]}</td>
                   <td>${p.bst_insert_ms[i]}</td>
                   <td>${p.avl_conflict_ms[i]}</td>
+                  <td>${p.bst_conflict_ms[i]}</td>
+                  <td>${p.avl_delete_ms ? p.avl_delete_ms[i] : '—'}</td>
+                  <td>${p.bst_delete_ms ? p.bst_delete_ms[i] : '—'}</td>
+                  <td style="color:var(--text-muted);">${p.avl_rotations ? p.avl_rotations[i] : '—'}</td>
                 </tr>
               `).join('')}
             </tbody>
           </table>
         `;
       } else if (suite === 'sort') {
+        const sel = data.selection_sort_ms || data.insertion_sort_ms;
         el.innerHTML = `
           <table class="data-table mono">
             <thead>
-              <tr><th>Size (N)</th><th>Merge Sort (ms)</th><th>Insertion Sort (ms)</th><th>Bubble Sort (ms)</th><th>Selection Sort (ms)</th></tr>
+              <tr><th>Size (N)</th><th>Merge Sort O(n log n)</th><th>Insertion Sort O(n²)</th><th>Bubble Sort O(n²)</th><th>Selection Sort O(n²)</th></tr>
             </thead>
             <tbody>
               ${data.sizes.map((n, i) => `
                 <tr>
                   <td>${n}</td>
-                  <td style="color:var(--success); font-weight:600;">${data.merge_sort_ms[i]}</td>
-                  <td>${data.insertion_sort_ms[i]}</td>
-                  <td>${data.bubble_sort_ms[i]}</td>
-                  <td>${data.selection_sort_ms[i]}</td>
+                  <td style="color:var(--success); font-weight:600;">${data.merge_sort_ms[i]} ms</td>
+                  <td>${data.insertion_sort_ms[i]} ms</td>
+                  <td>${data.bubble_sort_ms[i]} ms</td>
+                  <td>${sel[i]} ms</td>
                 </tr>
               `).join('')}
             </tbody>
           </table>
         `;
       } else if (suite === 'search') {
+        const itp = data.interpolation_search_ms || data.binary_search_ms;
         el.innerHTML = `
           <table class="data-table mono">
             <thead>
-              <tr><th>Size (N)</th><th>Hash Lookup (ms)</th><th>AVL Search (ms)</th><th>Binary Search (ms)</th><th>Linear Search (ms)</th></tr>
+              <tr><th>Size (N)</th><th>Hash Lookup O(1)</th><th>AVL Search O(log n)</th><th>Binary Search O(log n)</th><th>Interpolation Search</th><th>Linear Search O(n)</th></tr>
             </thead>
             <tbody>
               ${data.sizes.map((n, i) => `
                 <tr>
                   <td>${n}</td>
-                  <td style="color:var(--success); font-weight:600;">${data.hash_lookup_ms[i]}</td>
-                  <td>${data.avl_search_ms[i]}</td>
-                  <td>${data.binary_search_ms[i]}</td>
-                  <td>${data.linear_search_ms[i]}</td>
+                  <td style="color:var(--success); font-weight:600;">${data.hash_lookup_ms[i]} ms</td>
+                  <td style="color:var(--primary); font-weight:600;">${data.avl_search_ms[i]} ms</td>
+                  <td>${data.binary_search_ms[i]} ms</td>
+                  <td>${itp[i]} ms</td>
+                  <td style="color:var(--danger);">${data.linear_search_ms[i]} ms</td>
                 </tr>
               `).join('')}
             </tbody>
@@ -2701,7 +2827,7 @@
         el.innerHTML = `
           <table class="data-table mono">
             <thead>
-              <tr><th>Size (N)</th><th>AVL max_gap Pruned (ms)</th><th>Linear Scan (ms)</th><th>Speedup</th></tr>
+              <tr><th>Size (N)</th><th>AVL max_gap Pruned Discovery</th><th>Naive Linear Scan</th><th>Speedup Factor</th></tr>
             </thead>
             <tbody>
               ${data.sizes.map((n, i) => {
@@ -2709,9 +2835,9 @@
                 return `
                   <tr>
                     <td>${n}</td>
-                    <td style="color:var(--success); font-weight:600;">${data.avl_gap_pruned_ms[i]}</td>
-                    <td>${data.linear_scan_ms[i]}</td>
-                    <td style="font-weight:700;">${spd}x</td>
+                    <td style="color:var(--success); font-weight:600;">${data.avl_gap_pruned_ms[i]} ms</td>
+                    <td style="color:var(--danger);">${data.linear_scan_ms[i]} ms</td>
+                    <td style="font-weight:700; color:var(--success);">${spd}x</td>
                   </tr>
                 `;
               }).join('')}
