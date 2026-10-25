@@ -315,67 +315,92 @@ def load_user_events_from_db(user_id: str) -> List[Dict[str, Any]]:
 
 def save_event_to_db(event: Dict[str, Any], user_id: str) -> None:
     conn = get_db_connection()
-    cur = conn.cursor()
-    cur.execute("""
-        INSERT INTO events (id, name, date, start_time, end_time, start_minute, end_minute, venue, organizer, priority, depends_on, owner_user_id)
-        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-        ON CONFLICT(id) DO UPDATE SET
-            name = excluded.name,
-            date = excluded.date,
-            start_time = excluded.start_time,
-            end_time = excluded.end_time,
-            start_minute = excluded.start_minute,
-            end_minute = excluded.end_minute,
-            venue = excluded.venue,
-            organizer = excluded.organizer,
-            priority = excluded.priority,
-            depends_on = excluded.depends_on
-    """, (
-        event['id'], event['name'], event['date'], event['start_time'], event['end_time'],
-        event['start_minute'], event['end_minute'], event['venue'], event['organizer'],
-        int(event['priority']), event.get('depends_on'), user_id
-    ))
-    conn.commit()
-    conn.close()
+    try:
+        with conn:
+            conn.execute("""
+                INSERT INTO events (id, name, date, start_time, end_time, start_minute, end_minute, venue, organizer, priority, depends_on, owner_user_id)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                ON CONFLICT(id) DO UPDATE SET
+                    name = excluded.name,
+                    date = excluded.date,
+                    start_time = excluded.start_time,
+                    end_time = excluded.end_time,
+                    start_minute = excluded.start_minute,
+                    end_minute = excluded.end_minute,
+                    venue = excluded.venue,
+                    organizer = excluded.organizer,
+                    priority = excluded.priority,
+                    depends_on = excluded.depends_on
+            """, (
+                event['id'], event['name'], event['date'], event['start_time'], event['end_time'],
+                event['start_minute'], event['end_minute'], event['venue'], event['organizer'],
+                int(event['priority']), event.get('depends_on'), user_id
+            ))
+    finally:
+        conn.close()
 
 
 def delete_event_from_db(event_id: str, user_id: str) -> None:
     conn = get_db_connection()
-    cur = conn.cursor()
-    cur.execute("DELETE FROM events WHERE id = ? AND owner_user_id = ?", (event_id, user_id))
-    conn.commit()
-    conn.close()
+    try:
+        with conn:
+            conn.execute("DELETE FROM events WHERE id = ? AND owner_user_id = ?", (event_id, user_id))
+    finally:
+        conn.close()
 
 
 def load_waitlist_from_db(user_id: str) -> List[Dict[str, Any]]:
     conn = get_db_connection()
-    cur = conn.cursor()
-    cur.execute("SELECT * FROM waitlist WHERE owner_user_id = ? ORDER BY priority ASC, created_at ASC", (user_id,))
-    rows = cur.fetchall()
-    conn.close()
-    return [dict(r) for r in rows]
+    try:
+        cur = conn.cursor()
+        cur.execute("SELECT * FROM waitlist WHERE owner_user_id = ? ORDER BY priority ASC, created_at ASC", (user_id,))
+        rows = cur.fetchall()
+        return [dict(r) for r in rows]
+    finally:
+        conn.close()
 
 
 def save_waitlist_item_to_db(item: Dict[str, Any], user_id: str) -> None:
     conn = get_db_connection()
-    cur = conn.cursor()
-    w_id = item.get('waitlist_id') or f"WLT-{secrets.token_hex(4)}"
-    now_str = datetime.datetime.now().isoformat()
-    cur.execute("""
-        INSERT OR REPLACE INTO waitlist (id, event_id, name, date, start_time, end_time, venue, organizer, priority, depends_on, owner_user_id, created_at)
-        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-    """, (
-        w_id, item['id'], item['name'], item['date'], item['start_time'], item['end_time'],
-        item.get('venue', ''), item.get('organizer', ''), int(item.get('priority', 3)),
-        item.get('depends_on'), user_id, now_str
-    ))
-    conn.commit()
-    conn.close()
+    try:
+        w_id = item.get('waitlist_id') or f"WLT-{secrets.token_hex(4)}"
+        now_str = datetime.datetime.now().isoformat()
+        with conn:
+            conn.execute("""
+                INSERT OR REPLACE INTO waitlist (id, event_id, name, date, start_time, end_time, venue, organizer, priority, depends_on, owner_user_id, created_at)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            """, (
+                w_id, item['id'], item['name'], item['date'], item['start_time'], item['end_time'],
+                item.get('venue', ''), item.get('organizer', ''), int(item.get('priority', 3)),
+                item.get('depends_on'), user_id, now_str
+            ))
+    finally:
+        conn.close()
 
 
 def remove_waitlist_item_from_db(event_id: str, user_id: str) -> None:
     conn = get_db_connection()
-    cur = conn.cursor()
-    cur.execute("DELETE FROM waitlist WHERE (event_id = ? OR id = ?) AND owner_user_id = ?", (event_id, event_id, user_id))
-    conn.commit()
-    conn.close()
+    try:
+        with conn:
+            conn.execute("DELETE FROM waitlist WHERE (event_id = ? OR id = ?) AND owner_user_id = ?", (event_id, event_id, user_id))
+    finally:
+        conn.close()
+
+
+def promote_waitlist_to_event(waitlist_id: str, event: Dict[str, Any], user_id: str) -> None:
+    """Atomically removes waitlist record and creates scheduled event record in one transaction."""
+    conn = get_db_connection()
+    try:
+        with conn:
+            conn.execute("DELETE FROM waitlist WHERE (event_id = ? OR id = ?) AND owner_user_id = ?", (waitlist_id, waitlist_id, user_id))
+            conn.execute("""
+                INSERT INTO events (id, name, date, start_time, end_time, start_minute, end_minute, venue, organizer, priority, depends_on, owner_user_id)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            """, (
+                event['id'], event['name'], event['date'], event['start_time'], event['end_time'],
+                event['start_minute'], event['end_minute'], event['venue'], event['organizer'],
+                int(event['priority']), event.get('depends_on'), user_id
+            ))
+    finally:
+        conn.close()
+

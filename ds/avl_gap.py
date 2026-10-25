@@ -344,54 +344,62 @@ class AVLTree:
         Uses max_gap to prune subtrees whose largest idle gap is smaller than duration.
         Time complexity: O(k log n).
         """
-        # Collect all non-conflicting gaps within [day_start, day_end]
+        # Collect all events in the day range to establish booked intervals
         events_in_day: List[AVLNode] = []
 
         def _collect(node: Optional[AVLNode]):
             if not node:
                 return
-            # If node's subtree is entirely before day_start and has no overlap
-            if node.max_end < day_start:
-                return
-            # If node's subtree min_start is after day_end
-            if node.min_start > day_end:
-                return
-
-            # Check if this entire subtree lies inside [day_start, day_end]
-            # and its max_gap is strictly less than duration: internal gaps can be skipped
-            # However, boundary gaps and overlaps still need validation, so in-order collection is safe.
-            _collect(node.left)
+            if node.left and node.left.max_end > day_start:
+                _collect(node.left)
             if node.end > day_start and node.start < day_end:
                 events_in_day.append(node)
-            _collect(node.right)
+            if node.right and node.start < day_end:
+                _collect(node.right)
 
         _collect(self.root)
 
-        # Build candidate slots
+        # Merge overlapping or touching booked intervals
+        booked_intervals: List[Tuple[int, int]] = []
+        for ev in sorted(events_in_day, key=lambda n: n.start):
+            s = max(day_start, ev.start)
+            e = min(day_end, ev.end)
+            if s >= e:
+                continue
+            if not booked_intervals:
+                booked_intervals.append((s, e))
+            else:
+                last_s, last_e = booked_intervals[-1]
+                if s <= last_e:
+                    booked_intervals[-1] = (last_s, max(last_e, e))
+                else:
+                    booked_intervals.append((s, e))
+
         slots: List[Dict[str, int]] = []
-        current_cursor = max(after_minute, day_start)
+        cursor = max(after_minute, day_start)
 
-        for ev in events_in_day:
-            if ev.start > current_cursor:
-                gap = ev.start - current_cursor
-                if gap >= duration and (current_cursor + duration) <= day_end:
-                    slots.append({
-                        'start': current_cursor,
-                        'end': current_cursor + duration,
-                        'duration': duration
-                    })
-                    if len(slots) >= 4:
-                        break
-            current_cursor = max(current_cursor, ev.end)
+        for b_start, b_end in booked_intervals:
+            if b_start > cursor:
+                # Idle gap from cursor to b_start
+                while cursor + duration <= b_start and (cursor + duration) <= day_end and len(slots) < 4:
+                    if not self.has_conflict(cursor, cursor + duration):
+                        slots.append({
+                            'start': cursor,
+                            'end': cursor + duration,
+                            'duration': duration
+                        })
+                    cursor += duration
+            cursor = max(cursor, b_end)
 
-        # Check trailing slot after the last event until day_end
-        if len(slots) < 4 and current_cursor < day_end:
-            if (day_end - current_cursor) >= duration:
+        # Check idle time after the last booked interval until day_end
+        while cursor + duration <= day_end and len(slots) < 4:
+            if not self.has_conflict(cursor, cursor + duration):
                 slots.append({
-                    'start': current_cursor,
-                    'end': current_cursor + duration,
+                    'start': cursor,
+                    'end': cursor + duration,
                     'duration': duration
                 })
+            cursor += duration
 
         return slots
 

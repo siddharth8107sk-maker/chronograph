@@ -8,6 +8,7 @@ from __future__ import annotations
 import re
 import secrets
 import random
+import threading
 from typing import Dict, Any, Optional, List
 from flask import Flask, request, jsonify, render_template, make_response
 
@@ -31,6 +32,7 @@ app.config['SECRET_KEY'] = 'chronograph-secret-25cs306-mp01'
 class UserEngine:
     def __init__(self, user_id: str):
         self.user_id = user_id
+        self.lock = threading.RLock()
         self.avl_tree = AVLTree()
         self.bst_tree = BSTBaseline()
         self.hash_table = EventHashTable(64)
@@ -68,11 +70,12 @@ class UserEngine:
     def add_event(self, event: Dict[str, Any], record_version: bool = True) -> None:
         sm = event['start_minute']
         em = event['end_minute']
+        # Persist to SQLite first; in-memory indexes update only upon successful commit
+        db.save_event_to_db(event, self.user_id)
         self.avl_tree = self.avl_tree.insert(event, sm, em)
         self.bst_tree = self.bst_tree.insert(event, sm, em)
         self.hash_table.put(event['id'], event)
         self.trie.insert(event['name'], event['id'])
-        db.save_event_to_db(event, self.user_id)
 
         if record_version:
             self.version_stack.push(
@@ -84,19 +87,19 @@ class UserEngine:
             )
 
     def update_event(self, old_event: Dict[str, Any], new_event: Dict[str, Any], record_version: bool = True) -> None:
-        # Delete old
-        self.avl_tree = self.avl_tree.delete(old_event['id'], old_event['start_minute'])
-        self.bst_tree = self.bst_tree.delete(old_event['id'], old_event['start_minute'])
-        self.trie.delete(old_event['name'], old_event['id'])
-
-        # Insert new
         sm = new_event['start_minute']
         em = new_event['end_minute']
-        self.avl_tree = self.avl_tree.insert(new_event, sm, em)
-        self.bst_tree = self.bst_tree.insert(new_event, sm, em)
-        self.hash_table.put(new_event['id'], new_event)
-        self.trie.insert(new_event['name'], new_event['id'])
+        # Persist to SQLite first
         db.save_event_to_db(new_event, self.user_id)
+
+        # Update in-memory structures atomically
+        self.avl_tree = self.avl_tree.delete(old_event['id'], old_event['start_minute'])
+        self.avl_tree = self.avl_tree.insert(new_event, sm, em)
+        self.bst_tree = self.bst_tree.delete(old_event['id'], old_event['start_minute'])
+        self.bst_tree = self.bst_tree.insert(new_event, sm, em)
+        self.trie.delete(old_event['name'], old_event['id'])
+        self.trie.insert(new_event['name'], new_event['id'])
+        self.hash_table.put(new_event['id'], new_event)
 
         if record_version:
             self.version_stack.push(
@@ -112,13 +115,16 @@ class UserEngine:
         if not ev:
             return None
 
+        # Remove from SQLite first
+        db.delete_event_from_db(ev['id'], self.user_id)
+
+        # Remove from in-memory structures
         self.avl_tree = self.avl_tree.delete(ev['id'], ev['start_minute'])
         self.bst_tree = self.bst_tree.delete(ev['id'], ev['start_minute'])
         self.hash_table.delete(ev['id'])
         self.trie.delete(ev['name'], ev['id'])
-        db.delete_event_from_db(ev['id'], self.user_id)
 
-        # Auto-place waitlisted event into freed gap
+        # Auto-place waitlisted event into freed gap if suitable
         auto_placed = None
         if not self.waitlist.is_empty():
             candidates = self.waitlist.to_list()
@@ -130,18 +136,23 @@ class UserEngine:
                 if cand_dur <= freed_dur:
                     test_end = ev['start_minute'] + cand_dur
                     if not self.avl_tree.has_conflict(ev['start_minute'], test_end):
-                        # Place candidate
-                        self.waitlist.remove_by_id(cand['id'])
-                        db.remove_waitlist_item_from_db(cand['id'], self.user_id)
                         cand_date, cand_st = db.minutes_to_date_time(ev['start_minute'])
                         _, cand_et = db.minutes_to_date_time(test_end)
-                        cand['date'] = cand_date
-                        cand['start_time'] = cand_st
-                        cand['end_time'] = cand_et
-                        cand['start_minute'] = ev['start_minute']
-                        cand['end_minute'] = test_end
-                        self.add_event(cand, record_version=False)
-                        auto_placed = cand
+                        placed_event = dict(cand)
+                        placed_event['date'] = cand_date
+                        placed_event['start_time'] = cand_st
+                        placed_event['end_time'] = cand_et
+                        placed_event['start_minute'] = ev['start_minute']
+                        placed_event['end_minute'] = test_end
+
+                        # Atomic DB promotion
+                        db.promote_waitlist_to_event(cand.get('waitlist_id') or cand['id'], placed_event, self.user_id)
+                        self.waitlist.remove_by_id(cand['id'])
+                        self.avl_tree = self.avl_tree.insert(placed_event, placed_event['start_minute'], placed_event['end_minute'])
+                        self.bst_tree = self.bst_tree.insert(placed_event, placed_event['start_minute'], placed_event['end_minute'])
+                        self.hash_table.put(placed_event['id'], placed_event)
+                        self.trie.insert(placed_event['name'], placed_event['id'])
+                        auto_placed = placed_event
                         break
 
         self.version_stack.push(
@@ -155,12 +166,14 @@ class UserEngine:
 
 
 USER_ENGINES: Dict[str, UserEngine] = {}
+ENGINE_LOCK = threading.Lock()
 
 
 def get_user_engine(user_id: str) -> UserEngine:
-    if user_id not in USER_ENGINES:
-        USER_ENGINES[user_id] = UserEngine(user_id)
-    return USER_ENGINES[user_id]
+    with ENGINE_LOCK:
+        if user_id not in USER_ENGINES:
+            USER_ENGINES[user_id] = UserEngine(user_id)
+        return USER_ENGINES[user_id]
 
 
 # =====================================================================
@@ -332,15 +345,61 @@ def create_event():
 
     engine = get_user_engine(user['id'])
 
-    # Validate dependency cycle
-    if depends_on:
-        if not engine.hash_table.contains(depends_on):
-            return jsonify({'ok': False, 'data': None, 'error': f"Dependency event {depends_on} not found"}), 400
+    with engine.lock:
+        # Validate dependency cycle
+        if depends_on:
+            if not engine.hash_table.contains(depends_on):
+                return jsonify({'ok': False, 'data': None, 'error': f"Dependency event {depends_on} not found"}), 400
 
-        # Test graph with new dependency edge
-        all_events = list(engine.hash_table.values())
-        test_event = {
-            'id': 'TEMP-CHECK',
+            # Test graph with new dependency edge
+            all_events = list(engine.hash_table.values())
+            test_event = {
+                'id': 'TEMP-CHECK',
+                'name': name,
+                'date': date,
+                'start_time': start_time,
+                'end_time': end_time,
+                'start_minute': start_min,
+                'end_minute': end_min,
+                'venue': venue,
+                'organizer': organizer,
+                'priority': priority,
+                'depends_on': depends_on
+            }
+            test_graph = ConflictRippleGraph(all_events + [test_event])
+            topo = test_graph.topological_sort()
+            if topo['has_cycle']:
+                return jsonify({'ok': False, 'data': None, 'error': 'Dependency cycle detected! ' + topo.get('error', '')}), 400
+
+        # Conflict check
+        conflicts = engine.avl_tree.has_conflict(start_min, end_min)
+        if conflicts and not force:
+            # Find suggestions
+            duration = end_min - start_min
+            day_start = db.date_time_to_minutes(date, "08:00")
+            day_end = db.date_time_to_minutes(date, "20:00")
+            raw_slots = engine.avl_tree.find_earliest_slot(duration, day_start, day_start, day_end)
+            suggestions = []
+            for s in raw_slots:
+                _, s_st = db.minutes_to_date_time(s['start'])
+                _, s_et = db.minutes_to_date_time(s['end'])
+                suggestions.append({'date': date, 'start_time': s_st, 'end_time': s_et, 'start_minute': s['start'], 'end_minute': s['end']})
+
+            return jsonify({
+                'ok': False,
+                'data': {
+                    'conflicts': conflicts,
+                    'suggestions': suggestions
+                },
+                'error': f"Conflict detected with {len(conflicts)} event(s)"
+            }), 409
+
+        event_id = f"EVT-{random.randint(1000, 9999)}"
+        while engine.hash_table.contains(event_id):
+            event_id = f"EVT-{random.randint(1000, 9999)}"
+
+        new_event = {
+            'id': event_id,
             'name': name,
             'date': date,
             'start_time': start_time,
@@ -350,57 +409,12 @@ def create_event():
             'venue': venue,
             'organizer': organizer,
             'priority': priority,
-            'depends_on': depends_on
+            'depends_on': depends_on,
+            'owner_user_id': user['id']
         }
-        test_graph = ConflictRippleGraph(all_events + [test_event])
-        topo = test_graph.topological_sort()
-        if topo['has_cycle']:
-            return jsonify({'ok': False, 'data': None, 'error': 'Dependency cycle detected! ' + topo.get('error', '')}), 400
 
-    # Conflict check
-    conflicts = engine.avl_tree.has_conflict(start_min, end_min)
-    if conflicts and not force:
-        # Find suggestions
-        duration = end_min - start_min
-        day_start = db.date_time_to_minutes(date, "08:00")
-        day_end = db.date_time_to_minutes(date, "20:00")
-        raw_slots = engine.avl_tree.find_earliest_slot(duration, day_start, day_start, day_end)
-        suggestions = []
-        for s in raw_slots:
-            _, s_st = db.minutes_to_date_time(s['start'])
-            _, s_et = db.minutes_to_date_time(s['end'])
-            suggestions.append({'date': date, 'start_time': s_st, 'end_time': s_et, 'start_minute': s['start'], 'end_minute': s['end']})
-
-        return jsonify({
-            'ok': False,
-            'data': {
-                'conflicts': conflicts,
-                'suggestions': suggestions
-            },
-            'error': f"Conflict detected with {len(conflicts)} event(s)"
-        }), 409
-
-    event_id = f"EVT-{random.randint(1000, 9999)}"
-    while engine.hash_table.contains(event_id):
-        event_id = f"EVT-{random.randint(1000, 9999)}"
-
-    new_event = {
-        'id': event_id,
-        'name': name,
-        'date': date,
-        'start_time': start_time,
-        'end_time': end_time,
-        'start_minute': start_min,
-        'end_minute': end_min,
-        'venue': venue,
-        'organizer': organizer,
-        'priority': priority,
-        'depends_on': depends_on,
-        'owner_user_id': user['id']
-    }
-
-    engine.add_event(new_event)
-    return jsonify({'ok': True, 'data': new_event, 'error': None}), 201
+        engine.add_event(new_event)
+        return jsonify({'ok': True, 'data': new_event, 'error': None}), 201
 
 
 @app.route('/api/events/<event_id>', methods=['GET'])
@@ -422,45 +436,104 @@ def update_event(event_id: str):
         return err
 
     engine = get_user_engine(user['id'])
-    old_event = engine.hash_table.get(event_id)
-    if not old_event:
-        return jsonify({'ok': False, 'data': None, 'error': 'Event not found'}), 404
 
-    data = request.get_json() or {}
-    name = (data.get('name') or old_event['name']).strip()
-    date = (data.get('date') or old_event['date']).strip()
-    start_time = (data.get('start_time') or old_event['start_time']).strip()
-    end_time = (data.get('end_time') or old_event['end_time']).strip()
-    venue = (data.get('venue') or old_event['venue']).strip()
-    organizer = (data.get('organizer') or old_event['organizer']).strip()
-    priority = int(data.get('priority', old_event['priority']))
-    depends_on = data.get('depends_on', old_event.get('depends_on'))
-    if depends_on == '':
-        depends_on = None
+    with engine.lock:
+        old_event = engine.hash_table.get(event_id)
+        if not old_event:
+            return jsonify({'ok': False, 'data': None, 'error': 'Event not found'}), 404
 
-    start_min = db.date_time_to_minutes(date, start_time)
-    end_min = db.date_time_to_minutes(date, end_time)
+        data = request.get_json() or {}
+        name = (data.get('name') if data.get('name') is not None else old_event['name']).strip()
+        date = (data.get('date') if data.get('date') is not None else old_event['date']).strip()
+        start_time = (data.get('start_time') if data.get('start_time') is not None else old_event['start_time']).strip()
+        end_time = (data.get('end_time') if data.get('end_time') is not None else old_event['end_time']).strip()
+        venue = (data.get('venue') if data.get('venue') is not None else old_event['venue']).strip()
+        organizer = (data.get('organizer') if data.get('organizer') is not None else old_event['organizer']).strip()
+        priority = int(data.get('priority', old_event['priority']))
+        depends_on = data.get('depends_on', old_event.get('depends_on'))
+        if depends_on == '':
+            depends_on = None
+        force = data.get('force', False)
 
-    if end_min <= start_min:
-        return jsonify({'ok': False, 'data': None, 'error': 'End time must be after start time'}), 400
+        if not name or not venue:
+            return jsonify({'ok': False, 'data': None, 'error': 'Missing required fields'}), 400
 
-    new_event = {
-        'id': event_id,
-        'name': name,
-        'date': date,
-        'start_time': start_time,
-        'end_time': end_time,
-        'start_minute': start_min,
-        'end_minute': end_min,
-        'venue': venue,
-        'organizer': organizer,
-        'priority': priority,
-        'depends_on': depends_on,
-        'owner_user_id': user['id']
-    }
+        try:
+            start_min = db.date_time_to_minutes(date, start_time)
+            end_min = db.date_time_to_minutes(date, end_time)
+        except Exception:
+            return jsonify({'ok': False, 'data': None, 'error': 'Invalid date or time format'}), 400
 
-    engine.update_event(old_event, new_event)
-    return jsonify({'ok': True, 'data': new_event, 'error': None})
+        if end_min <= start_min:
+            return jsonify({'ok': False, 'data': None, 'error': 'End time must be after start time'}), 400
+
+        # Validate dependencies
+        if depends_on:
+            if depends_on == event_id:
+                return jsonify({'ok': False, 'data': None, 'error': 'An event cannot depend on itself'}), 400
+            if not engine.hash_table.contains(depends_on):
+                return jsonify({'ok': False, 'data': None, 'error': f"Dependency event {depends_on} not found"}), 400
+
+            # Cycle test
+            all_other = [e for e in engine.hash_table.values() if e['id'] != event_id]
+            test_ev = {
+                'id': event_id,
+                'name': name,
+                'date': date,
+                'start_time': start_time,
+                'end_time': end_time,
+                'start_minute': start_min,
+                'end_minute': end_min,
+                'venue': venue,
+                'organizer': organizer,
+                'priority': priority,
+                'depends_on': depends_on
+            }
+            test_graph = ConflictRippleGraph(all_other + [test_ev])
+            topo = test_graph.topological_sort()
+            if topo['has_cycle']:
+                return jsonify({'ok': False, 'data': None, 'error': 'Dependency cycle detected! ' + topo.get('error', '')}), 400
+
+        # Conflict check excluding self
+        conflicts = engine.avl_tree.has_conflict(start_min, end_min, ignore_id=event_id)
+        if conflicts and not force:
+            duration = end_min - start_min
+            day_start = db.date_time_to_minutes(date, "08:00")
+            day_end = db.date_time_to_minutes(date, "20:00")
+            forked_tree = engine.avl_tree.delete(old_event['id'], old_event['start_minute'])
+            raw_slots = forked_tree.find_earliest_slot(duration, day_start, day_start, day_end)
+            suggestions = []
+            for s in raw_slots:
+                _, s_st = db.minutes_to_date_time(s['start'])
+                _, s_et = db.minutes_to_date_time(s['end'])
+                suggestions.append({'date': date, 'start_time': s_st, 'end_time': s_et, 'start_minute': s['start'], 'end_minute': s['end']})
+
+            return jsonify({
+                'ok': False,
+                'data': {
+                    'conflicts': conflicts,
+                    'suggestions': suggestions
+                },
+                'error': f"Conflict detected with {len(conflicts)} event(s)"
+            }), 409
+
+        new_event = {
+            'id': event_id,
+            'name': name,
+            'date': date,
+            'start_time': start_time,
+            'end_time': end_time,
+            'start_minute': start_min,
+            'end_minute': end_min,
+            'venue': venue,
+            'organizer': organizer,
+            'priority': priority,
+            'depends_on': depends_on,
+            'owner_user_id': user['id']
+        }
+
+        engine.update_event(old_event, new_event)
+        return jsonify({'ok': True, 'data': new_event, 'error': None})
 
 
 @app.route('/api/events/<event_id>', methods=['DELETE'])
@@ -470,15 +543,20 @@ def delete_event(event_id: str):
         return err
 
     engine = get_user_engine(user['id'])
-    auto_placed = engine.delete_event(event_id)
-    return jsonify({
-        'ok': True,
-        'data': {
-            'deleted_id': event_id,
-            'auto_placed': auto_placed
-        },
-        'error': None
-    })
+
+    with engine.lock:
+        if not engine.hash_table.contains(event_id):
+            return jsonify({'ok': False, 'data': None, 'error': 'Event not found'}), 404
+
+        auto_placed = engine.delete_event(event_id)
+        return jsonify({
+            'ok': True,
+            'data': {
+                'deleted_id': event_id,
+                'auto_placed': auto_placed
+            },
+            'error': None
+        })
 
 
 # =====================================================================
@@ -500,11 +578,18 @@ def reschedule_preview(event_id: str):
     new_st = (data.get('start_time') or curr_event['start_time']).strip()
     new_et = (data.get('end_time') or curr_event['end_time']).strip()
 
-    new_start_min = db.date_time_to_minutes(new_date, new_st)
-    new_end_min = db.date_time_to_minutes(new_date, new_et)
+    try:
+        new_start_min = db.date_time_to_minutes(new_date, new_st)
+        new_end_min = db.date_time_to_minutes(new_date, new_et)
+    except Exception:
+        return jsonify({'ok': False, 'data': None, 'error': 'Invalid date or time format'}), 400
+
+    if new_end_min <= new_start_min:
+        return jsonify({'ok': False, 'data': None, 'error': 'End time must be after start time'}), 400
+
     duration = new_end_min - new_start_min
 
-    # Fork root (pure path copying: tree.delete + tree.insert on fork)
+    # Fork tree: remove event being rescheduled so it does not conflict with itself
     forked_tree = engine.avl_tree.delete(curr_event['id'], curr_event['start_minute'])
     conflicts = forked_tree.has_conflict(new_start_min, new_end_min)
 
@@ -521,7 +606,7 @@ def reschedule_preview(event_id: str):
     hypo_graph = ConflictRippleGraph(all_events)
     ripple_info = hypo_graph.bfs_ripple(event_id)
 
-    # 3 alternative slots from find_earliest_slot ranked by lowest ripple then smallest displacement
+    # Alternative non-conflicting slots from find_earliest_slot
     day_start = db.date_time_to_minutes(new_date, "08:00")
     day_end = db.date_time_to_minutes(new_date, "20:00")
     candidate_slots = forked_tree.find_earliest_slot(duration, day_start, day_start, day_end)
@@ -532,7 +617,6 @@ def reschedule_preview(event_id: str):
         _, s_et = db.minutes_to_date_time(s['end'])
         disp = abs(s['start'] - new_start_min)
 
-        # Compute ripple for this alternative slot
         alt_event = dict(hypothetical_event)
         alt_event['start_minute'] = s['start']
         alt_event['end_minute'] = s['end']
@@ -568,7 +652,7 @@ def reschedule_preview(event_id: str):
             'conflicts': conflicts,
             'ripple_score': ripple_info['ripple_score'],
             'affected_layers': ripple_info['layers'],
-            'alternative_slots': ranked_suggestions[:3]
+            'alternative_slots': ranked_suggestions[:4]
         },
         'error': None
     })
@@ -581,27 +665,59 @@ def reschedule_commit(event_id: str):
         return err
 
     engine = get_user_engine(user['id'])
-    curr_event = engine.hash_table.get(event_id)
-    if not curr_event:
-        return jsonify({'ok': False, 'data': None, 'error': 'Event not found'}), 404
 
-    data = request.get_json() or {}
-    new_date = (data.get('date') or curr_event['date']).strip()
-    new_st = (data.get('start_time') or curr_event['start_time']).strip()
-    new_et = (data.get('end_time') or curr_event['end_time']).strip()
+    with engine.lock:
+        curr_event = engine.hash_table.get(event_id)
+        if not curr_event:
+            return jsonify({'ok': False, 'data': None, 'error': 'Event not found'}), 404
 
-    new_start_min = db.date_time_to_minutes(new_date, new_st)
-    new_end_min = db.date_time_to_minutes(new_date, new_et)
+        data = request.get_json() or {}
+        new_date = (data.get('date') or curr_event['date']).strip()
+        new_st = (data.get('start_time') or curr_event['start_time']).strip()
+        new_et = (data.get('end_time') or curr_event['end_time']).strip()
+        force = data.get('force', False)
 
-    new_event = dict(curr_event)
-    new_event['date'] = new_date
-    new_event['start_time'] = new_st
-    new_event['end_time'] = new_et
-    new_event['start_minute'] = new_start_min
-    new_event['end_minute'] = new_end_min
+        try:
+            new_start_min = db.date_time_to_minutes(new_date, new_st)
+            new_end_min = db.date_time_to_minutes(new_date, new_et)
+        except Exception:
+            return jsonify({'ok': False, 'data': None, 'error': 'Invalid date or time format'}), 400
 
-    engine.update_event(curr_event, new_event, record_version=True)
-    return jsonify({'ok': True, 'data': new_event, 'error': None})
+        if new_end_min <= new_start_min:
+            return jsonify({'ok': False, 'data': None, 'error': 'End time must be after start time'}), 400
+
+        # Validate conflicts directly on the live tree excluding the event itself
+        conflicts = engine.avl_tree.has_conflict(new_start_min, new_end_min, ignore_id=event_id)
+        if conflicts and not force:
+            duration = new_end_min - new_start_min
+            day_start = db.date_time_to_minutes(new_date, "08:00")
+            day_end = db.date_time_to_minutes(new_date, "20:00")
+            forked_tree = engine.avl_tree.delete(curr_event['id'], curr_event['start_minute'])
+            raw_slots = forked_tree.find_earliest_slot(duration, day_start, day_start, day_end)
+            suggestions = []
+            for s in raw_slots:
+                _, s_st = db.minutes_to_date_time(s['start'])
+                _, s_et = db.minutes_to_date_time(s['end'])
+                suggestions.append({'date': new_date, 'start_time': s_st, 'end_time': s_et, 'start_minute': s['start'], 'end_minute': s['end']})
+
+            return jsonify({
+                'ok': False,
+                'data': {
+                    'conflicts': conflicts,
+                    'suggestions': suggestions
+                },
+                'error': f"Conflict detected with {len(conflicts)} event(s)"
+            }), 409
+
+        new_event = dict(curr_event)
+        new_event['date'] = new_date
+        new_event['start_time'] = new_st
+        new_event['end_time'] = new_et
+        new_event['start_minute'] = new_start_min
+        new_event['end_minute'] = new_end_min
+
+        engine.update_event(curr_event, new_event, record_version=True)
+        return jsonify({'ok': True, 'data': new_event, 'error': None})
 
 
 # =====================================================================
@@ -622,8 +738,14 @@ def check_conflicts():
     if not date or not st or not et:
         return jsonify({'ok': False, 'data': None, 'error': 'Missing date or times'}), 400
 
-    start_min = db.date_time_to_minutes(date, st)
-    end_min = db.date_time_to_minutes(date, et)
+    try:
+        start_min = db.date_time_to_minutes(date, st)
+        end_min = db.date_time_to_minutes(date, et)
+    except Exception:
+        return jsonify({'ok': False, 'data': None, 'error': 'Invalid date or time format'}), 400
+
+    if end_min <= start_min:
+        return jsonify({'ok': False, 'data': None, 'error': 'End time must be after start time'}), 400
 
     engine = get_user_engine(user['id'])
     conflicts = engine.avl_tree.has_conflict(start_min, end_min, ignore_id=ignore_id)
@@ -772,37 +894,44 @@ def handle_undo():
         return err
 
     engine = get_user_engine(user['id'])
-    snap = engine.version_stack.undo()
-    if not snap:
-        return jsonify({'ok': False, 'data': None, 'error': 'Nothing to undo'}), 400
 
-    # Sync in-memory active references
-    engine.avl_tree = snap.tree
-    engine.hash_table = snap.hash_table.snapshot()
-    engine.trie = snap.trie.snapshot()
-    engine.waitlist = snap.waitlist.snapshot()
+    with engine.lock:
+        snap = engine.version_stack.undo()
+        if not snap:
+            return jsonify({'ok': False, 'data': None, 'error': 'Nothing to undo'}), 400
 
-    # Re-sync SQLite with current snapshot
-    conn = db.get_db_connection()
-    conn.execute("DELETE FROM events WHERE owner_user_id = ?", (user['id'],))
-    for ev in engine.hash_table.values():
-        conn.execute("""
-            INSERT INTO events (id, name, date, start_time, end_time, start_minute, end_minute, venue, organizer, priority, depends_on, owner_user_id)
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-        """, (ev['id'], ev['name'], ev['date'], ev['start_time'], ev['end_time'], ev['start_minute'], ev['end_minute'], ev['venue'], ev['organizer'], ev['priority'], ev.get('depends_on'), user['id']))
-    conn.commit()
-    conn.close()
+        # Re-sync SQLite with current snapshot atomically
+        conn = db.get_db_connection()
+        try:
+            with conn:
+                conn.execute("DELETE FROM events WHERE owner_user_id = ?", (user['id'],))
+                for ev in snap.hash_table.values():
+                    conn.execute("""
+                        INSERT INTO events (id, name, date, start_time, end_time, start_minute, end_minute, venue, organizer, priority, depends_on, owner_user_id)
+                        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                    """, (ev['id'], ev['name'], ev['date'], ev['start_time'], ev['end_time'], ev['start_minute'], ev['end_minute'], ev['venue'], ev['organizer'], ev['priority'], ev.get('depends_on'), user['id']))
+        finally:
+            conn.close()
 
-    return jsonify({
-        'ok': True,
-        'data': {
-            'version': snap.version,
-            'description': snap.description,
-            'can_undo': engine.version_stack.can_undo(),
-            'can_redo': engine.version_stack.can_redo()
-        },
-        'error': None
-    })
+        # Update in-memory references only after successful DB update
+        engine.avl_tree = snap.tree
+        engine.bst_tree = BSTBaseline()
+        for ev in snap.hash_table.values():
+            engine.bst_tree = engine.bst_tree.insert(ev, ev['start_minute'], ev['end_minute'])
+        engine.hash_table = snap.hash_table.snapshot()
+        engine.trie = snap.trie.snapshot()
+        engine.waitlist = snap.waitlist.snapshot()
+
+        return jsonify({
+            'ok': True,
+            'data': {
+                'version': snap.version,
+                'description': snap.description,
+                'can_undo': engine.version_stack.can_undo(),
+                'can_redo': engine.version_stack.can_redo()
+            },
+            'error': None
+        })
 
 
 @app.route('/api/redo', methods=['POST'])
@@ -812,35 +941,42 @@ def handle_redo():
         return err
 
     engine = get_user_engine(user['id'])
-    snap = engine.version_stack.redo()
-    if not snap:
-        return jsonify({'ok': False, 'data': None, 'error': 'Nothing to redo'}), 400
 
-    engine.avl_tree = snap.tree
-    engine.hash_table = snap.hash_table.snapshot()
-    engine.trie = snap.trie.snapshot()
-    engine.waitlist = snap.waitlist.snapshot()
+    with engine.lock:
+        snap = engine.version_stack.redo()
+        if not snap:
+            return jsonify({'ok': False, 'data': None, 'error': 'Nothing to redo'}), 400
 
-    conn = db.get_db_connection()
-    conn.execute("DELETE FROM events WHERE owner_user_id = ?", (user['id'],))
-    for ev in engine.hash_table.values():
-        conn.execute("""
-            INSERT INTO events (id, name, date, start_time, end_time, start_minute, end_minute, venue, organizer, priority, depends_on, owner_user_id)
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-        """, (ev['id'], ev['name'], ev['date'], ev['start_time'], ev['end_time'], ev['start_minute'], ev['end_minute'], ev['venue'], ev['organizer'], ev['priority'], ev.get('depends_on'), user['id']))
-    conn.commit()
-    conn.close()
+        conn = db.get_db_connection()
+        try:
+            with conn:
+                conn.execute("DELETE FROM events WHERE owner_user_id = ?", (user['id'],))
+                for ev in snap.hash_table.values():
+                    conn.execute("""
+                        INSERT INTO events (id, name, date, start_time, end_time, start_minute, end_minute, venue, organizer, priority, depends_on, owner_user_id)
+                        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                    """, (ev['id'], ev['name'], ev['date'], ev['start_time'], ev['end_time'], ev['start_minute'], ev['end_minute'], ev['venue'], ev['organizer'], ev['priority'], ev.get('depends_on'), user['id']))
+        finally:
+            conn.close()
 
-    return jsonify({
-        'ok': True,
-        'data': {
-            'version': snap.version,
-            'description': snap.description,
-            'can_undo': engine.version_stack.can_undo(),
-            'can_redo': engine.version_stack.can_redo()
-        },
-        'error': None
-    })
+        engine.avl_tree = snap.tree
+        engine.bst_tree = BSTBaseline()
+        for ev in snap.hash_table.values():
+            engine.bst_tree = engine.bst_tree.insert(ev, ev['start_minute'], ev['end_minute'])
+        engine.hash_table = snap.hash_table.snapshot()
+        engine.trie = snap.trie.snapshot()
+        engine.waitlist = snap.waitlist.snapshot()
+
+        return jsonify({
+            'ok': True,
+            'data': {
+                'version': snap.version,
+                'description': snap.description,
+                'can_undo': engine.version_stack.can_undo(),
+                'can_redo': engine.version_stack.can_redo()
+            },
+            'error': None
+        })
 
 
 # =====================================================================
