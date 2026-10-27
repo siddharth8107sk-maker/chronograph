@@ -1,209 +1,539 @@
 <!DOCTYPE html>
 <html lang="en">
+
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>ChronoGraph — Real-Time Event Scheduling System</title>
-  <meta name="description" content="ChronoGraph real-time event scheduler powered by persistent gap-augmented AVL trees, conflict ripple graphs, and algorithm benchmarks.">
+  <meta name="description"
+    content="ChronoGraph real-time event scheduler powered by persistent gap-augmented AVL trees, conflict ripple graphs, and algorithm benchmarks.">
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500;600&display=swap" rel="stylesheet">
+  <link
+    href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500;600&display=swap"
+    rel="stylesheet">
   <style>
     :root {
-      --bg: #F6F7F9;
+      --bg: #F8FAFC;
       --surface: #FFFFFF;
-      --border: #E5E7EB;
-      --border-focus: #2563EB;
-      --text: #111827;
-      --text-muted: #6B7280;
-      --primary: #2563EB;
-      --primary-hover: #1D4ED8;
-      --primary-light: #EFF6FF;
-      --success: #16A34A;
-      --success-light: #DCFCE7;
-      --warning: #D97706;
-      --warning-light: #FEF3C7;
-      --danger: #DC2626;
-      --danger-light: #FEE2E2;
+      --surface-subtle: #F1F5F9;
+      --border: #E2E8F0;
+      --border-light: #F1F5F9;
+      --border-focus: #4F46E5;
+      --text: #0F172A;
+      --text-muted: #64748B;
+      --text-subtle: #94A3B8;
+
+      --sidebar-bg: #0F172A;
+      --sidebar-border: #1E293B;
+      --sidebar-hover: #1E293B;
+      --sidebar-text: #94A3B8;
+      --sidebar-text-active: #FFFFFF;
+      --sidebar-active-bg: #4F46E5;
+
+      --primary: #4F46E5;
+      --primary-hover: #4338CA;
+      --primary-light: #EEF2FF;
+      --primary-border: #C7D2FE;
+
+      --accent: #0EA5E9;
+      --accent-light: #F0F9FF;
+      --teal: #0D9488;
+      --teal-light: #F0FDFA;
+
+      --success: #10B981;
+      --success-hover: #059669;
+      --success-light: #ECFDF5;
+      --success-border: #A7F3D0;
+
+      --warning: #F59E0B;
+      --warning-hover: #D97706;
+      --warning-light: #FFFBEB;
+      --warning-border: #FDE68A;
+
+      --danger: #EF4444;
+      --danger-hover: #DC2626;
+      --danger-light: #FEF2F2;
+      --danger-border: #FECDD3;
 
       /* Fixed 6 soft venue colors */
-      --venue-0: #EEF2FF; --venue-border-0: #6366F1; --venue-text-0: #3730A3;
-      --venue-1: #ECFDF5; --venue-border-1: #10B981; --venue-text-1: #065F46;
-      --venue-2: #FFFBEB; --venue-border-2: #F59E0B; --venue-text-2: #92400E;
-      --venue-3: #FFF1F2; --venue-border-3: #F43F5E; --venue-text-3: #9F1239;
-      --venue-4: #F0F9FF; --venue-border-4: #0EA5E9; --venue-text-4: #075985;
-      --venue-5: #F5F3FF; --venue-border-5: #8B5CF6; --venue-text-5: #5B21B6;
+      --venue-0: #EEF2FF;
+      --venue-border-0: #6366F1;
+      --venue-text-0: #3730A3;
+      --venue-1: #ECFDF5;
+      --venue-border-1: #10B981;
+      --venue-text-1: #065F46;
+      --venue-2: #FFFBEB;
+      --venue-border-2: #F59E0B;
+      --venue-text-2: #92400E;
+      --venue-3: #FFF1F2;
+      --venue-border-3: #F43F5E;
+      --venue-text-3: #9F1239;
+      --venue-4: #F0F9FF;
+      --venue-border-4: #0EA5E9;
+      --venue-text-4: #075985;
+      --venue-5: #F5F3FF;
+      --venue-border-5: #8B5CF6;
+      --venue-text-5: #5B21B6;
 
-      --radius: 12px;
-      --shadow-sm: 0 1px 3px rgba(0, 0, 0, 0.05);
-      --shadow-md: 0 4px 6px -1px rgba(0, 0, 0, 0.07), 0 2px 4px -2px rgba(0, 0, 0, 0.05);
-      --font-main: 'Inter', -apple-system, BlinkMacSystemFont, sans-serif;
+      --radius-sm: 6px;
+      --radius: 10px;
+      --radius-lg: 14px;
+      --radius-full: 9999px;
+
+      --shadow-xs: 0 1px 2px rgba(0, 0, 0, 0.04);
+      --shadow-sm: 0 1px 3px rgba(0, 0, 0, 0.06), 0 1px 2px rgba(0, 0, 0, 0.04);
+      --shadow-md: 0 4px 6px -1px rgba(0, 0, 0, 0.07), 0 2px 4px -2px rgba(0, 0, 0, 0.04);
+      --shadow-lg: 0 10px 15px -3px rgba(0, 0, 0, 0.08), 0 4px 6px -4px rgba(0, 0, 0, 0.03);
+      --shadow-modal: 0 20px 25px -5px rgba(0, 0, 0, 0.15), 0 8px 10px -6px rgba(0, 0, 0, 0.1);
+
+      --font-main: 'Inter', -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
       --font-mono: 'JetBrains Mono', monospace;
     }
 
-    * { box-sizing: border-box; margin: 0; padding: 0; }
+    * {
+      box-sizing: border-box;
+      margin: 0;
+      padding: 0;
+    }
+
     body {
       font-family: var(--font-main);
       background-color: var(--bg);
       color: var(--text);
-      font-size: 14px;
+      font-size: 13.5px;
       line-height: 1.5;
       -webkit-font-smoothing: antialiased;
       min-height: 100vh;
-      display: flex;
-      flex-direction: column;
     }
 
-    a { color: var(--primary); text-decoration: none; }
-    a:hover { text-decoration: underline; }
-    button, input, select, textarea { font-family: inherit; font-size: 14px; }
+    a {
+      color: var(--primary);
+      text-decoration: none;
+      transition: color 0.15s ease;
+    }
 
-    /* Mono utility */
-    .mono { font-family: var(--font-mono); }
+    a:hover {
+      color: var(--primary-hover);
+      text-decoration: none;
+    }
 
-    /* Navigation Bar */
+    button,
+    input,
+    select,
+    textarea {
+      font-family: inherit;
+      font-size: 13.5px;
+    }
+
+    .mono {
+      font-family: var(--font-mono);
+    }
+
+    /* =================================================================
+       Application Shell & Modern Sidebar Layout
+       ================================================================= */
+    #app-shell {
+      display: flex;
+      min-height: 100vh;
+      background: var(--bg);
+    }
+
+    /* Sidebar (Visible when body.is-authenticated) */
+    aside#app-sidebar {
+      width: 250px;
+      flex-shrink: 0;
+      background: var(--sidebar-bg);
+      border-right: 1px solid var(--sidebar-border);
+      display: flex;
+      flex-direction: column;
+      position: sticky;
+      top: 0;
+      height: 100vh;
+      overflow-y: auto;
+      z-index: 120;
+      transition: transform 0.25s cubic-bezier(0.16, 1, 0.3, 1);
+    }
+
+    body:not(.is-authenticated) aside#app-sidebar {
+      display: none !important;
+    }
+
+    .sidebar-brand {
+      padding: 20px 20px 16px;
+      border-bottom: 1px solid var(--sidebar-border);
+    }
+
+    .brand-logo {
+      display: flex;
+      align-items: center;
+      gap: 12px;
+      text-decoration: none;
+    }
+
+    .brand-icon-box {
+      width: 36px;
+      height: 36px;
+      border-radius: 8px;
+      background: linear-gradient(135deg, #4F46E5 0%, #3B82F6 100%);
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      color: #FFFFFF;
+      box-shadow: 0 2px 4px rgba(79, 70, 229, 0.4);
+      flex-shrink: 0;
+    }
+
+    .brand-text-block {
+      display: flex;
+      flex-direction: column;
+      line-height: 1.2;
+    }
+
+    .brand-name {
+      font-size: 15px;
+      font-weight: 700;
+      color: #FFFFFF;
+      letter-spacing: -0.01em;
+    }
+
+    .brand-badge {
+      font-size: 10px;
+      font-weight: 600;
+      color: #818CF8;
+      font-family: var(--font-mono);
+      margin-top: 2px;
+    }
+
+    /* Sidebar College Context Card */
+    .sidebar-college-card {
+      margin: 14px 14px 10px;
+      padding: 10px 12px;
+      background: #1E293B;
+      border: 1px solid #334155;
+      border-radius: var(--radius-sm);
+    }
+
+    .college-card-header {
+      display: flex;
+      align-items: center;
+      gap: 6px;
+      font-size: 10.5px;
+      font-weight: 600;
+      color: #94A3B8;
+      text-transform: uppercase;
+      letter-spacing: 0.05em;
+    }
+
+    .college-card-name {
+      font-size: 12px;
+      font-weight: 600;
+      color: #F8FAFC;
+      margin: 4px 0 2px;
+      white-space: nowrap;
+      overflow: hidden;
+      text-overflow: ellipsis;
+    }
+
+    .college-card-status {
+      display: flex;
+      align-items: center;
+      gap: 6px;
+      font-size: 10.5px;
+      color: #34D399;
+      font-family: var(--font-mono);
+    }
+
+    .live-pulse {
+      width: 6px;
+      height: 6px;
+      border-radius: 50%;
+      background: #10B981;
+      box-shadow: 0 0 0 2px rgba(16, 185, 129, 0.25);
+    }
+
+    /* Sidebar Navigation Links */
+    .sidebar-nav-group {
+      flex: 1;
+      padding: 10px 14px;
+    }
+
+    .sidebar-section-title {
+      font-size: 10.5px;
+      font-weight: 600;
+      text-transform: uppercase;
+      letter-spacing: 0.06em;
+      color: #64748B;
+      padding: 8px 10px 4px;
+    }
+
+    nav.nav-links {
+      display: flex;
+      flex-direction: column;
+      gap: 3px;
+    }
+
+    nav.nav-links a.nav-item {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      padding: 8px 12px;
+      border-radius: var(--radius-sm);
+      font-weight: 500;
+      font-size: 13px;
+      color: var(--sidebar-text);
+      text-decoration: none;
+      transition: all 0.15s ease;
+      position: relative;
+    }
+
+    nav.nav-links a.nav-item svg {
+      width: 16px;
+      height: 16px;
+      flex-shrink: 0;
+      opacity: 0.85;
+      transition: opacity 0.15s;
+    }
+
+    nav.nav-links a.nav-item:hover {
+      background: var(--sidebar-hover);
+      color: #F8FAFC;
+    }
+
+    nav.nav-links a.nav-item:hover svg {
+      opacity: 1;
+    }
+
+    nav.nav-links a.nav-item.active {
+      background: var(--sidebar-active-bg);
+      color: #FFFFFF;
+      font-weight: 600;
+      box-shadow: 0 1px 3px rgba(79, 70, 229, 0.35);
+    }
+
+    nav.nav-links a.nav-item.active svg {
+      opacity: 1;
+    }
+
+    /* Sidebar Footer CTA */
+    .sidebar-footer {
+      padding: 14px;
+      border-top: 1px solid var(--sidebar-border);
+    }
+
+    .btn-sidebar-cta {
+      width: 100%;
+      padding: 9px 12px;
+      font-size: 13px;
+      font-weight: 600;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      gap: 8px;
+    }
+
+    /* =================================================================
+       Main Shell & Top Navbar
+       ================================================================= */
+    #app-main {
+      flex: 1;
+      min-width: 0;
+      display: flex;
+      flex-direction: column;
+      background: var(--bg);
+    }
+
     header.navbar {
       background: var(--surface);
       border-bottom: 1px solid var(--border);
+      height: 60px;
       position: sticky;
       top: 0;
       z-index: 100;
-      box-shadow: var(--shadow-sm);
+      box-shadow: var(--shadow-xs);
     }
+
+    body:not(.is-authenticated) header.navbar {
+      display: none !important;
+    }
+
     .nav-container {
-      max-width: 1180px;
-      margin: 0 auto;
-      padding: 0 20px;
-      height: 64px;
+      width: 100%;
+      height: 100%;
+      padding: 0 28px;
       display: flex;
       align-items: center;
       justify-content: space-between;
     }
-    .brand-logo {
+
+    .breadcrumb-container {
       display: flex;
       align-items: center;
-      gap: 10px;
-      font-weight: 700;
-      font-size: 18px;
-      color: var(--text);
-      text-decoration: none;
+      gap: 8px;
+      font-size: 13px;
     }
-    .brand-badge {
-      font-size: 11px;
-      font-weight: 600;
-      background: var(--primary-light);
-      color: var(--primary);
-      padding: 2px 8px;
-      border-radius: 999px;
-      font-family: var(--font-mono);
-    }
-    nav.nav-links {
-      display: flex;
-      align-items: center;
-      gap: 6px;
-    }
-    nav.nav-links a.nav-item {
-      padding: 8px 14px;
-      border-radius: 8px;
-      font-weight: 500;
+
+    .breadcrumb-prefix {
       color: var(--text-muted);
-      text-decoration: none;
-      transition: all 0.15s ease;
+      font-weight: 500;
     }
-    nav.nav-links a.nav-item:hover {
-      background: var(--bg);
+
+    .breadcrumb-separator {
+      color: #CBD5E1;
+    }
+
+    .breadcrumb-current {
       color: var(--text);
-      text-decoration: none;
-    }
-    nav.nav-links a.nav-item.active {
-      background: var(--primary-light);
-      color: var(--primary);
       font-weight: 600;
+      text-transform: capitalize;
+    }
+
+    .header-action-btn {
+      font-size: 12.5px;
+      padding: 6px 12px;
+      height: 32px;
     }
 
     .user-profile {
       position: relative;
       display: flex;
       align-items: center;
-      gap: 12px;
+      gap: 10px;
     }
+
     .user-btn {
       display: flex;
       align-items: center;
       gap: 8px;
       background: transparent;
       border: 1px solid var(--border);
-      padding: 6px 12px;
-      border-radius: 8px;
+      padding: 4px 10px 4px 6px;
+      border-radius: var(--radius-sm);
       cursor: pointer;
       font-weight: 500;
+      color: var(--text);
+      transition: background 0.15s, border-color 0.15s;
+      height: 34px;
     }
-    .user-btn:hover { background: var(--bg); }
+
+    .user-btn:hover {
+      background: var(--surface-subtle);
+      border-color: #CBD5E1;
+    }
+
+    .user-avatar-circle {
+      width: 24px;
+      height: 24px;
+      border-radius: 50%;
+      background: linear-gradient(135deg, #4F46E5, #06B6D4);
+      color: #FFFFFF;
+      font-size: 11px;
+      font-weight: 600;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      flex-shrink: 0;
+    }
+
     .dropdown-menu {
       position: absolute;
       right: 0;
       top: calc(100% + 8px);
       background: var(--surface);
       border: 1px solid var(--border);
-      border-radius: 8px;
-      box-shadow: var(--shadow-md);
-      min-width: 160px;
+      border-radius: var(--radius);
+      box-shadow: var(--shadow-lg);
+      min-width: 200px;
       display: none;
       flex-direction: column;
-      padding: 4px;
+      padding: 6px;
       z-index: 101;
+      animation: fadeIn 0.15s ease-out;
     }
-    .dropdown-menu.show { display: flex; }
+
+    .dropdown-menu.show {
+      display: flex;
+    }
+
     .dropdown-item {
       padding: 8px 12px;
       text-align: left;
       background: transparent;
       border: none;
       cursor: pointer;
-      border-radius: 6px;
+      border-radius: var(--radius-sm);
       color: var(--danger);
       font-weight: 500;
+      font-size: 13px;
       display: flex;
       align-items: center;
       gap: 8px;
+      transition: background 0.15s;
     }
-    .dropdown-item:hover { background: var(--danger-light); }
 
-    /* Main Container */
+    .dropdown-item:hover {
+      background: var(--danger-light);
+    }
+
+    /* =================================================================
+       Main Container & Card System
+       ================================================================= */
     main#app {
       flex: 1;
-      max-width: 1180px;
       width: 100%;
-      margin: 24px auto;
-      padding: 0 20px;
+      max-width: 1320px;
+      margin: 0 auto;
+      padding: 24px 28px;
     }
 
-    /* Cards & Layout */
+    body:not(.is-authenticated) main#app {
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      min-height: 100vh;
+      padding: 24px;
+      background: radial-gradient(circle at 50% 15%, #EEF2FF 0%, #F8FAFC 75%);
+    }
+
     .card {
       background: var(--surface);
       border: 1px solid var(--border);
       border-radius: var(--radius);
-      box-shadow: var(--shadow-sm);
-      padding: 24px;
-      margin-bottom: 24px;
+      box-shadow: var(--shadow-xs);
+      padding: 22px 24px;
+      margin-bottom: 22px;
+      transition: border-color 0.15s ease, box-shadow 0.15s ease;
     }
-    .page-header {
+
+    .card-header-row {
       display: flex;
       align-items: center;
       justify-content: space-between;
-      margin-bottom: 24px;
+      flex-wrap: wrap;
+      gap: 12px;
+      margin-bottom: 16px;
+    }
+
+    .page-header {
+      display: flex;
+      align-items: flex-start;
+      justify-content: space-between;
+      margin-bottom: 22px;
       flex-wrap: wrap;
       gap: 16px;
     }
+
     .page-header h1 {
-      font-size: 24px;
+      font-size: 22px;
       font-weight: 700;
       color: var(--text);
+      letter-spacing: -0.015em;
     }
+
     .page-header p {
       color: var(--text-muted);
-      font-size: 14px;
-      margin-top: 4px;
+      font-size: 13.5px;
+      margin-top: 3px;
     }
 
     /* Buttons */
@@ -211,175 +541,382 @@
       display: inline-flex;
       align-items: center;
       justify-content: center;
-      gap: 6px;
-      padding: 8px 16px;
-      border-radius: 8px;
+      gap: 7px;
+      padding: 8px 15px;
+      border-radius: var(--radius-sm);
       font-weight: 500;
+      font-size: 13px;
+      line-height: 1.25;
       border: 1px solid transparent;
       cursor: pointer;
-      transition: background 0.15s, border-color 0.15s;
+      transition: all 0.15s cubic-bezier(0.16, 1, 0.3, 1);
+      white-space: nowrap;
     }
-    .btn-primary { background: var(--primary); color: #fff; }
-    .btn-primary:hover { background: var(--primary-hover); }
-    .btn-secondary { background: var(--surface); border-color: var(--border); color: var(--text); }
-    .btn-secondary:hover { background: var(--bg); }
-    .btn-danger { background: var(--danger); color: #fff; }
-    .btn-danger:hover { background: #B91C1C; }
-    .btn-sm { padding: 4px 10px; font-size: 13px; }
-    .btn:disabled { opacity: 0.6; cursor: not-allowed; }
+
+    .btn-primary {
+      background: var(--primary);
+      color: #FFFFFF;
+      box-shadow: 0 1px 2px rgba(79, 70, 229, 0.25);
+    }
+
+    .btn-primary:hover {
+      background: var(--primary-hover);
+      box-shadow: 0 2px 4px rgba(79, 70, 229, 0.35);
+      transform: translateY(-1px);
+    }
+
+    .btn-secondary {
+      background: var(--surface);
+      border-color: var(--border);
+      color: var(--text);
+      box-shadow: var(--shadow-xs);
+    }
+
+    .btn-secondary:hover {
+      background: var(--surface-subtle);
+      border-color: #CBD5E1;
+    }
+
+    .btn-danger {
+      background: var(--danger);
+      color: #FFFFFF;
+      box-shadow: 0 1px 2px rgba(239, 68, 68, 0.25);
+    }
+
+    .btn-danger:hover {
+      background: var(--danger-hover);
+      transform: translateY(-1px);
+    }
+
+    .btn-sm {
+      padding: 5px 10px;
+      font-size: 12px;
+      border-radius: var(--radius-sm);
+    }
+
+    .btn:disabled {
+      opacity: 0.6;
+      cursor: not-allowed;
+      transform: none !important;
+    }
 
     /* Form Inputs */
     .form-group {
       margin-bottom: 16px;
     }
+
     .form-label {
       display: block;
       font-weight: 500;
-      font-size: 13px;
+      font-size: 12.5px;
       margin-bottom: 6px;
-      color: var(--text);
+      color: #334155;
     }
+
     .form-control {
       width: 100%;
+      height: 38px;
       padding: 8px 12px;
       border: 1px solid var(--border);
-      border-radius: 8px;
+      border-radius: var(--radius-sm);
       background: var(--surface);
       color: var(--text);
+      font-size: 13px;
       outline: none;
-      transition: border-color 0.15s;
+      transition: border-color 0.15s ease, box-shadow 0.15s ease;
     }
+
+    select.form-control {
+      cursor: pointer;
+    }
+
     .form-control:focus {
       border-color: var(--border-focus);
-      box-shadow: 0 0 0 3px rgba(37, 99, 235, 0.1);
+      box-shadow: 0 0 0 3px rgba(79, 70, 229, 0.15);
     }
+
     .input-error {
       color: var(--danger);
       font-size: 12px;
       margin-top: 4px;
+      font-weight: 500;
     }
 
-    /* Grid helpers */
-    .grid-2 { display: grid; grid-template-columns: 1fr 1fr; gap: 20px; }
-    .grid-3 { display: grid; grid-template-columns: repeat(3, 1fr); gap: 20px; }
-    .grid-4 { display: grid; grid-template-columns: repeat(4, 1fr); gap: 16px; }
+    /* Grid Layouts */
+    .grid-2 {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 20px;
+    }
+
+    .grid-3 {
+      display: grid;
+      grid-template-columns: repeat(3, 1fr);
+      gap: 20px;
+    }
+
+    .grid-4 {
+      display: grid;
+      grid-template-columns: repeat(4, 1fr);
+      gap: 16px;
+    }
 
     /* Stat Cards */
     .stat-card {
       background: var(--surface);
       border: 1px solid var(--border);
       border-radius: var(--radius);
-      padding: 20px;
-      box-shadow: var(--shadow-sm);
-    }
-    .stat-title {
-      font-size: 13px;
-      font-weight: 500;
-      color: var(--text-muted);
-      margin-bottom: 6px;
-    }
-    .stat-value {
-      font-size: 28px;
-      font-weight: 700;
-      color: var(--text);
-      font-family: var(--font-mono);
-    }
-    .stat-sub {
-      font-size: 12px;
-      color: var(--text-muted);
-      margin-top: 4px;
+      padding: 20px 22px;
+      box-shadow: var(--shadow-xs);
+      transition: transform 0.15s ease, box-shadow 0.15s ease, border-color 0.15s ease;
+      position: relative;
     }
 
-    /* Tables */
-    .table-container {
-      width: 100%;
-      overflow-x: auto;
+    .stat-card:hover {
+      transform: translateY(-2px);
+      box-shadow: var(--shadow-md);
+      border-color: #CBD5E1;
     }
-    table.data-table {
-      width: 100%;
-      border-collapse: collapse;
-      text-align: left;
+
+    .stat-card-header {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      margin-bottom: 8px;
     }
-    table.data-table th {
-      padding: 12px 14px;
-      background: #F9FAFB;
-      border-bottom: 1px solid var(--border);
-      font-size: 12px;
+
+    .stat-title {
+      font-size: 11.5px;
       font-weight: 600;
       color: var(--text-muted);
       text-transform: uppercase;
       letter-spacing: 0.05em;
     }
-    table.data-table td {
-      padding: 12px 14px;
-      border-bottom: 1px solid var(--border);
-      font-size: 13px;
+
+    .stat-icon-wrapper {
+      width: 32px;
+      height: 32px;
+      border-radius: var(--radius-sm);
+      display: flex;
+      align-items: center;
+      justify-content: center;
     }
+
+    .stat-value {
+      font-size: 28px;
+      font-weight: 700;
+      color: var(--text);
+      font-family: var(--font-mono);
+      line-height: 1.1;
+      letter-spacing: -0.02em;
+    }
+
+    .stat-sub {
+      font-size: 12px;
+      color: var(--text-muted);
+      margin-top: 6px;
+      display: flex;
+      align-items: center;
+      gap: 6px;
+    }
+
+    /* Quick Action Pills Bar */
+    .quick-actions-bar {
+      display: flex;
+      gap: 10px;
+      flex-wrap: wrap;
+      margin-bottom: 22px;
+    }
+
+    .action-pill-btn {
+      display: inline-flex;
+      align-items: center;
+      gap: 6px;
+      padding: 7px 14px;
+      background: var(--surface);
+      border: 1px solid var(--border);
+      border-radius: var(--radius-full);
+      font-size: 12.5px;
+      font-weight: 500;
+      color: var(--text);
+      cursor: pointer;
+      box-shadow: var(--shadow-xs);
+      transition: all 0.15s ease;
+    }
+
+    .action-pill-btn:hover {
+      background: var(--surface-subtle);
+      border-color: #CBD5E1;
+      transform: translateY(-1px);
+    }
+
+    .action-pill-btn svg {
+      width: 14px;
+      height: 14px;
+      color: var(--primary);
+    }
+
+    /* Modern Tables */
+    .table-container {
+      width: 100%;
+      overflow-x: auto;
+      border-radius: var(--radius);
+      border: 1px solid var(--border);
+      background: var(--surface);
+    }
+
+    table.data-table {
+      width: 100%;
+      border-collapse: collapse;
+      text-align: left;
+    }
+
+    table.data-table th {
+      padding: 11px 16px;
+      background: var(--surface-subtle);
+      border-bottom: 1px solid var(--border);
+      font-size: 11px;
+      font-weight: 600;
+      color: var(--text-muted);
+      text-transform: uppercase;
+      letter-spacing: 0.05em;
+      white-space: nowrap;
+    }
+
+    table.data-table td {
+      padding: 13px 16px;
+      border-bottom: 1px solid var(--border-light);
+      font-size: 13px;
+      color: var(--text);
+      vertical-align: middle;
+    }
+
+    table.data-table tr:last-child td {
+      border-bottom: none;
+    }
+
     table.data-table tr:hover td {
-      background: #FAFAFC;
+      background: #F8FAFC;
     }
 
     /* Badges */
     .badge {
       display: inline-flex;
       align-items: center;
-      gap: 4px;
-      padding: 2px 8px;
-      border-radius: 999px;
-      font-size: 12px;
-      font-weight: 500;
+      gap: 5px;
+      padding: 3px 9px;
+      border-radius: var(--radius-full);
+      font-size: 11.5px;
+      font-weight: 600;
+      line-height: 1.2;
     }
-    .badge-primary { background: var(--primary-light); color: var(--primary); }
-    .badge-success { background: var(--success-light); color: var(--success); }
-    .badge-warning { background: var(--warning-light); color: var(--warning); }
-    .badge-danger { background: var(--danger-light); color: var(--danger); }
-    .badge-outline { background: transparent; border: 1px solid var(--border); color: var(--text-muted); }
+
+    .badge-primary {
+      background: var(--primary-light);
+      color: var(--primary);
+      border: 1px solid var(--primary-border);
+    }
+
+    .badge-success {
+      background: var(--success-light);
+      color: #047857;
+      border: 1px solid var(--success-border);
+    }
+
+    .badge-warning {
+      background: var(--warning-light);
+      color: #B45309;
+      border: 1px solid var(--warning-border);
+    }
+
+    .badge-danger {
+      background: var(--danger-light);
+      color: #B91C1C;
+      border: 1px solid var(--danger-border);
+    }
+
+    .badge-outline {
+      background: var(--surface);
+      border: 1px solid var(--border);
+      color: var(--text-muted);
+    }
 
     /* Modals */
     .modal-overlay {
       position: fixed;
       inset: 0;
-      background: rgba(17, 24, 39, 0.4);
-      backdrop-filter: blur(2px);
+      background: rgba(15, 23, 42, 0.55);
+      backdrop-filter: blur(6px);
+      -webkit-backdrop-filter: blur(6px);
       display: flex;
       align-items: center;
       justify-content: center;
       z-index: 200;
       opacity: 0;
       pointer-events: none;
-      transition: opacity 0.2s ease;
+      transition: opacity 0.2s cubic-bezier(0.16, 1, 0.3, 1);
+      padding: 16px;
     }
+
     .modal-overlay.open {
       opacity: 1;
       pointer-events: auto;
     }
+
     .modal-box {
       background: var(--surface);
-      border-radius: var(--radius);
+      border-radius: var(--radius-lg);
       width: 100%;
       max-width: 540px;
       max-height: 90vh;
       overflow-y: auto;
-      box-shadow: var(--shadow-md);
+      box-shadow: var(--shadow-modal);
       border: 1px solid var(--border);
       padding: 24px;
       position: relative;
+      transform: translateY(8px) scale(0.98);
+      transition: transform 0.2s cubic-bezier(0.16, 1, 0.3, 1);
     }
+
+    .modal-overlay.open .modal-box {
+      transform: translateY(0) scale(1);
+    }
+
     .modal-header {
       display: flex;
       align-items: center;
       justify-content: space-between;
       margin-bottom: 20px;
+      padding-bottom: 12px;
+      border-bottom: 1px solid var(--border-light);
     }
-    .modal-header h3 { font-size: 18px; font-weight: 600; }
+
+    .modal-header h3 {
+      font-size: 17px;
+      font-weight: 700;
+      color: var(--text);
+    }
+
     .modal-close {
+      width: 28px;
+      height: 28px;
+      border-radius: var(--radius-sm);
       background: transparent;
-      border: none;
-      font-size: 20px;
+      border: 1px solid transparent;
+      font-size: 18px;
+      line-height: 1;
       cursor: pointer;
       color: var(--text-muted);
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      transition: all 0.15s;
     }
-    .modal-close:hover { color: var(--text); }
+
+    .modal-close:hover {
+      background: var(--surface-subtle);
+      color: var(--text);
+    }
 
     /* Schedule Week Grid */
     .schedule-toolbar {
@@ -390,96 +927,110 @@
       flex-wrap: wrap;
       gap: 12px;
     }
+
     .version-indicator {
       display: inline-flex;
       align-items: center;
       gap: 8px;
-      font-size: 13px;
+      font-size: 12px;
       font-family: var(--font-mono);
-      background: #F3F4F6;
-      padding: 4px 10px;
-      border-radius: 6px;
+      background: #F8FAFC;
+      padding: 5px 12px;
+      border-radius: var(--radius-sm);
       border: 1px solid var(--border);
+      color: #334155;
     }
+
     .timeline-container {
       overflow-x: auto;
       border: 1px solid var(--border);
       border-radius: var(--radius);
       background: var(--surface);
+      box-shadow: var(--shadow-xs);
     }
+
     .timeline-grid {
       display: grid;
       grid-template-columns: 80px repeat(7, minmax(140px, 1fr));
       min-width: 1060px;
       position: relative;
     }
+
     .timeline-header-cell {
-      padding: 12px;
-      background: #F9FAFB;
+      padding: 12px 10px;
+      background: #F8FAFC;
       border-bottom: 1px solid var(--border);
       border-right: 1px solid var(--border);
       text-align: center;
       font-weight: 600;
-      font-size: 13px;
+      font-size: 12.5px;
+      color: #1E293B;
     }
+
     .timeline-time-col {
       border-right: 1px solid var(--border);
       background: #FAFAFC;
     }
+
     .timeline-time-slot {
       height: 52px;
       padding: 4px 8px;
-      border-bottom: 1px dashed #E5E7EB;
+      border-bottom: 1px dashed #E2E8F0;
       font-size: 11px;
       font-family: var(--font-mono);
       color: var(--text-muted);
       text-align: right;
     }
+
     .timeline-day-col {
       position: relative;
       border-right: 1px solid var(--border);
-      height: calc(12 * 52px); /* 8:00 to 20:00 (12 hours) */
-      background: repeating-linear-gradient(
-        0deg,
-        transparent,
-        transparent 51px,
-        #F3F4F6 51px,
-        #F3F4F6 52px
-      );
+      height: calc(12 * 52px);
+      /* 8:00 to 20:00 (12 hours) */
+      background: repeating-linear-gradient(0deg,
+          transparent,
+          transparent 51px,
+          #F1F5F9 51px,
+          #F1F5F9 52px);
     }
+
     .event-block {
       position: absolute;
       left: 4px;
       right: 4px;
-      border-radius: 6px;
+      border-radius: var(--radius-sm);
       padding: 4px 8px;
       font-size: 11px;
       line-height: 1.3;
       cursor: pointer;
       overflow: hidden;
-      box-shadow: 0 1px 2px rgba(0,0,0,0.08);
-      transition: transform 0.1s, box-shadow 0.1s;
+      box-shadow: 0 1px 3px rgba(0, 0, 0, 0.06);
+      transition: transform 0.12s ease, box-shadow 0.12s ease;
       border-left: 3px solid;
     }
+
     .event-block:hover {
-      transform: translateY(-1px);
-      box-shadow: 0 4px 6px rgba(0,0,0,0.12);
+      transform: translateY(-2px);
+      box-shadow: 0 4px 8px rgba(0, 0, 0, 0.12);
       z-index: 10;
     }
+
     .event-block.conflicted {
       outline: 2px solid var(--danger);
       outline-offset: -1px;
     }
+
     .event-block-title {
       font-weight: 600;
       white-space: nowrap;
       overflow: hidden;
       text-overflow: ellipsis;
     }
+
     .event-block-time {
       font-family: var(--font-mono);
       font-size: 10px;
-      opacity: 0.85;
+      opacity: 0.9;
     }
 
     /* Toast notifications */
@@ -492,30 +1043,65 @@
       flex-direction: column;
       gap: 10px;
     }
+
     .toast {
       background: var(--surface);
       color: var(--text);
       padding: 12px 18px;
-      border-radius: 8px;
+      border-radius: var(--radius);
       border: 1px solid var(--border);
-      box-shadow: var(--shadow-md);
+      box-shadow: var(--shadow-lg);
       font-size: 13px;
+      font-weight: 500;
       display: flex;
       align-items: center;
       gap: 10px;
       min-width: 280px;
       animation: slideIn 0.2s ease-out;
     }
-    .toast-success { border-left: 4px solid var(--success); }
-    .toast-error { border-left: 4px solid var(--danger); }
-    .toast-info { border-left: 4px solid var(--primary); }
+
+    .toast-success {
+      border-left: 4px solid var(--success);
+    }
+
+    .toast-error {
+      border-left: 4px solid var(--danger);
+    }
+
+    .toast-info {
+      border-left: 4px solid var(--primary);
+    }
+
     @keyframes slideIn {
-      from { transform: translateX(100%); opacity: 0; }
-      to { transform: translateX(0); opacity: 1; }
+      from {
+        transform: translateX(100%);
+        opacity: 0;
+      }
+
+      to {
+        transform: translateX(0);
+        opacity: 1;
+      }
+    }
+
+    @keyframes fadeIn {
+      from {
+        opacity: 0;
+        transform: translateY(-4px);
+      }
+
+      to {
+        opacity: 1;
+        transform: translateY(0);
+      }
     }
 
     /* Autocomplete dropdown */
-    .autocomplete-wrapper { position: relative; width: 100%; }
+    .autocomplete-wrapper {
+      position: relative;
+      width: 100%;
+    }
+
     .autocomplete-list {
       position: absolute;
       top: 100%;
@@ -523,22 +1109,33 @@
       right: 0;
       background: var(--surface);
       border: 1px solid var(--border);
-      border-radius: 8px;
-      box-shadow: var(--shadow-md);
+      border-radius: var(--radius-sm);
+      box-shadow: var(--shadow-lg);
       z-index: 50;
-      max-height: 200px;
+      max-height: 220px;
       overflow-y: auto;
       display: none;
       margin-top: 4px;
     }
+
     .autocomplete-item {
-      padding: 8px 12px;
+      padding: 9px 12px;
       cursor: pointer;
       display: flex;
       justify-content: space-between;
       align-items: center;
+      font-size: 13px;
+      border-bottom: 1px solid var(--border-light);
+      transition: background 0.12s;
     }
-    .autocomplete-item:hover { background: var(--bg); }
+
+    .autocomplete-item:last-child {
+      border-bottom: none;
+    }
+
+    .autocomplete-item:hover {
+      background: var(--surface-subtle);
+    }
 
     /* SVG Canvas Styles */
     .svg-canvas-container {
@@ -549,7 +1146,9 @@
       overflow: hidden;
       width: 100%;
       min-height: 520px;
+      box-shadow: inset 0 1px 2px rgba(0, 0, 0, 0.02);
     }
+
     svg.graph-svg {
       width: 100%;
       height: 520px;
@@ -562,6 +1161,7 @@
       transition: fill 0.2s, stroke 0.2s, r 0.2s;
       cursor: pointer;
     }
+
     .tree-node text {
       font-family: var(--font-mono);
       font-size: 10px;
@@ -570,88 +1170,279 @@
       pointer-events: none;
       font-weight: 500;
     }
+
     .tree-edge {
       stroke: #CBD5E1;
       stroke-width: 1.5;
       fill: none;
     }
+
     .traversal-highlight {
       stroke: #F59E0B !important;
       stroke-width: 4 !important;
       fill: #FEF3C7 !important;
     }
 
-    /* Responsive */
-    @media (max-width: 768px) {
-      .grid-2, .grid-3, .grid-4 { grid-template-columns: 1fr; }
-      nav.nav-links { display: none; }
-      nav.nav-links.open {
-        display: flex;
-        flex-direction: column;
-        position: absolute;
-        top: 64px;
-        left: 0;
-        right: 0;
-        background: var(--surface);
-        border-bottom: 1px solid var(--border);
-        padding: 12px 20px;
-      }
-      .mobile-menu-btn { display: block !important; }
+    /* Mobile Menu Button */
+    .mobile-menu-btn {
+      display: none;
+      background: transparent;
+      border: 1px solid var(--border);
+      padding: 6px;
+      border-radius: var(--radius-sm);
+      cursor: pointer;
+      color: var(--text);
     }
-    .mobile-menu-btn { display: none; background: transparent; border: none; font-size: 20px; cursor: pointer; }
+
+    /* Responsive */
+    @media (max-width: 900px) {
+      aside#app-sidebar {
+        position: fixed;
+        top: 0;
+        left: 0;
+        bottom: 0;
+        width: 260px;
+        transform: translateX(-100%);
+        box-shadow: var(--shadow-lg);
+        z-index: 250;
+      }
+
+      aside#app-sidebar.open {
+        transform: translateX(0);
+      }
+
+      .mobile-menu-btn {
+        display: inline-flex !important;
+      }
+
+      .grid-4 {
+        grid-template-columns: repeat(2, 1fr);
+      }
+    }
+
+    @media (max-width: 640px) {
+
+      .grid-2,
+      .grid-3,
+      .grid-4 {
+        grid-template-columns: 1fr;
+      }
+
+      main#app {
+        padding: 16px;
+      }
+
+      .nav-container {
+        padding: 0 16px;
+      }
+
+      .breadcrumb-prefix {
+        display: none;
+      }
+
+      .header-action-btn {
+        display: none;
+      }
+    }
   </style>
 </head>
+
 <body>
 
-  <!-- Top Navbar -->
-  <header class="navbar">
-    <div class="nav-container">
-      <div style="display:flex; align-items:center; gap:16px;">
-        <button class="mobile-menu-btn" onclick="toggleMobileNav()" aria-label="Toggle navigation">☰</button>
+  <div id="app-shell">
+    <!-- Collapsible Modern Sidebar for Authenticated Views -->
+    <aside id="app-sidebar" class="sidebar">
+      <div class="sidebar-brand">
         <a href="#/dashboard" class="brand-logo">
-          <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="#2563EB" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round">
-            <circle cx="12" cy="12" r="10"></circle>
-            <polyline points="12 6 12 12 16 14"></polyline>
-          </svg>
-          <span>ChronoGraph</span>
-          <span class="brand-badge">25CS306 MP-01</span>
+          <div class="brand-icon-box">
+            <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2"
+              stroke-linecap="round" stroke-linejoin="round">
+              <circle cx="12" cy="12" r="10"></circle>
+              <polyline points="12 6 12 12 16 14"></polyline>
+            </svg>
+          </div>
+          <div class="brand-text-block">
+            <span class="brand-name">ChronoGraph</span>
+            <span class="brand-badge">25CS306 MP-01</span>
+          </div>
         </a>
       </div>
 
-      <nav class="nav-links" id="main-nav-links">
-        <a href="#/dashboard" class="nav-item" id="nav-dashboard">Dashboard</a>
-        <a href="#/events" class="nav-item" id="nav-events">Events</a>
-        <a href="#/schedule" class="nav-item" id="nav-schedule">Schedule</a>
-        <a href="#/conflicts" class="nav-item" id="nav-conflicts">Conflicts</a>
-        <a href="#/tree" class="nav-item" id="nav-tree">Tree</a>
-        <a href="#/benchmarks" class="nav-item" id="nav-benchmarks">Benchmarks</a>
-      </nav>
-
-      <div class="user-profile" id="user-profile-section" style="display:flex; align-items:center; gap:8px;">
-        <span id="user-college-badge" class="badge badge-primary" style="font-size: 11px; max-width: 170px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;"></span>
-        <button class="user-btn" onclick="toggleUserDropdown()" id="user-display-name">
-          <span id="user-name-text">Account</span>
-          <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="6 9 12 15 18 9"></polyline></svg>
-        </button>
-        <div class="dropdown-menu" id="user-dropdown">
-          <div id="user-dropdown-college-info" style="padding: 10px 14px; font-size: 12px; border-bottom: 1px solid var(--border); background: var(--bg); line-height: 1.4;"></div>
-          <button class="dropdown-item" onclick="handleSignOut()">
-            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4"></path><polyline points="16 17 21 12 16 7"></polyline><line x1="21" y1="12" x2="9" y2="12"></line></svg>
-            Sign out
-          </button>
+      <!-- Campus / Institution Quick Card -->
+      <div class="sidebar-college-card">
+        <div class="college-card-header">
+          <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+            <path d="M3 21h18M3 10h18M5 6l7-3 7 3M4 10v11M20 10v11M8 14v3M12 14v3M16 14v3" />
+          </svg>
+          <span>Active Institution</span>
+        </div>
+        <div class="college-card-name" id="sidebar-college-name">Karunya Institute</div>
+        <div class="college-card-status">
+          <span class="live-pulse"></span>
+          <span>In-Memory AVL Engine</span>
         </div>
       </div>
-    </div>
-  </header>
 
-  <!-- App Main Content Area -->
-  <main id="app">
-    <div id="loading-spinner" style="text-align:center; padding: 60px 0; color: var(--text-muted);">
-      <svg width="32" height="32" viewBox="0 0 24 24" fill="none" stroke="#2563EB" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="animation: spin 1s linear infinite;"><line x1="12" y1="2" x2="12" y2="6"></line><line x1="12" y1="18" x2="12" y2="22"></line><line x1="4.93" y1="4.93" x2="7.76" y2="7.76"></line><line x1="16.24" y1="16.24" x2="19.07" y2="19.07"></line><line x1="2" y1="12" x2="6" y2="12"></line><line x1="18" y1="12" x2="22" y2="12"></line><line x1="4.93" y1="19.07" x2="7.76" y2="16.24"></line><line x1="16.24" y1="7.76" x2="19.07" y2="4.93"></line></svg>
-      <div style="margin-top:12px; font-weight:500;">Loading ChronoGraph...</div>
+      <!-- Main Navigation Links -->
+      <div class="sidebar-nav-group">
+        <div class="sidebar-section-title">Overview</div>
+        <nav class="nav-links" id="main-nav-links">
+          <a href="#/dashboard" class="nav-item" id="nav-dashboard">
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+              <rect x="3" y="3" width="7" height="7"></rect>
+              <rect x="14" y="3" width="7" height="7"></rect>
+              <rect x="14" y="14" width="7" height="7"></rect>
+              <rect x="3" y="14" width="7" height="7"></rect>
+            </svg>
+            <span>Dashboard</span>
+          </a>
+          <a href="#/events" class="nav-item" id="nav-events">
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+              <line x1="8" y1="6" x2="21" y2="6"></line>
+              <line x1="8" y1="12" x2="21" y2="12"></line>
+              <line x1="8" y1="18" x2="21" y2="18"></line>
+              <line x1="3" y1="6" x2="3.01" y2="6"></line>
+              <line x1="3" y1="12" x2="3.01" y2="12"></line>
+              <line x1="3" y1="18" x2="3.01" y2="18"></line>
+            </svg>
+            <span>Events Directory</span>
+          </a>
+          <a href="#/schedule" class="nav-item" id="nav-schedule">
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+              <rect x="3" y="4" width="18" height="18" rx="2" ry="2"></rect>
+              <line x1="16" y1="2" x2="16" y2="6"></line>
+              <line x1="8" y1="2" x2="8" y2="6"></line>
+              <line x1="3" y1="10" x2="21" y2="10"></line>
+            </svg>
+            <span>Calendar Schedule</span>
+          </a>
+          <div class="sidebar-section-title" style="margin-top: 16px;">Algorithms & DS</div>
+          <a href="#/conflicts" class="nav-item" id="nav-conflicts">
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+              <circle cx="18" cy="5" r="3"></circle>
+              <circle cx="6" cy="12" r="3"></circle>
+              <circle cx="18" cy="19" r="3"></circle>
+              <line x1="8.59" y1="13.51" x2="15.42" y2="17.49"></line>
+              <line x1="15.41" y1="6.51" x2="8.59" y2="10.49"></line>
+            </svg>
+            <span>Conflict Ripple</span>
+          </a>
+          <a href="#/tree" class="nav-item" id="nav-tree">
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+              <circle cx="12" cy="5" r="3"></circle>
+              <circle cx="6" cy="19" r="3"></circle>
+              <circle cx="18" cy="19" r="3"></circle>
+              <path d="M12 8v4M12 12l-4 4M12 12l4 4" />
+            </svg>
+            <span>AVL Tree Visualizer</span>
+          </a>
+          <a href="#/benchmarks" class="nav-item" id="nav-benchmarks">
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+              <line x1="18" y1="20" x2="18" y2="10"></line>
+              <line x1="12" y1="20" x2="12" y2="4"></line>
+              <line x1="6" y1="20" x2="6" y2="14"></line>
+            </svg>
+            <span>Algorithm Analysis</span>
+          </a>
+        </nav>
+      </div>
+
+      <!-- Sidebar Quick CTA -->
+      <div class="sidebar-footer">
+        <button class="btn btn-primary btn-sidebar-cta" onclick="openAddEventModal()">
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5">
+            <line x1="12" y1="5" x2="12" y2="19"></line>
+            <line x1="5" y1="12" x2="19" y2="12"></line>
+          </svg>
+          <span>+ Schedule Event</span>
+        </button>
+      </div>
+    </aside>
+
+    <!-- App Main Shell -->
+    <div id="app-main">
+      <header class="navbar">
+        <div class="nav-container">
+          <div style="display:flex; align-items:center; gap:14px;">
+            <button class="mobile-menu-btn" onclick="toggleMobileNav()" aria-label="Toggle navigation">
+              <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                <line x1="3" y1="12" x2="21" y2="12"></line>
+                <line x1="3" y1="6" x2="21" y2="6"></line>
+                <line x1="3" y1="18" x2="21" y2="18"></line>
+              </svg>
+            </button>
+            <div class="breadcrumb-container">
+              <span class="breadcrumb-prefix">ChronoGraph</span>
+              <span class="breadcrumb-separator">/</span>
+              <span class="breadcrumb-current" id="page-breadcrumb-title">Dashboard</span>
+            </div>
+          </div>
+
+          <div style="display:flex; align-items:center; gap:10px;">
+            <button class="btn btn-secondary btn-sm header-action-btn" onclick="openAddVenueModal()"
+              title="Add Campus Venue">
+              <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                <line x1="12" y1="5" x2="12" y2="19"></line>
+                <line x1="5" y1="12" x2="19" y2="12"></line>
+              </svg>
+              <span>+ Venue</span>
+            </button>
+            <button class="btn btn-primary btn-sm header-action-btn" onclick="openAddEventModal()">
+              <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5">
+                <line x1="12" y1="5" x2="12" y2="19"></line>
+                <line x1="5" y1="12" x2="19" y2="12"></line>
+              </svg>
+              <span>New Event</span>
+            </button>
+
+            <div class="user-profile" id="user-profile-section" style="display:flex; align-items:center; gap:8px;">
+              <span id="user-college-badge" class="badge badge-primary"
+                style="font-size: 11px; max-width: 170px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;"></span>
+              <button class="user-btn" onclick="toggleUserDropdown()" id="user-display-name">
+                <span class="user-avatar-circle" id="user-avatar-initials">U</span>
+                <span id="user-name-text">Account</span>
+                <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                  <polyline points="6 9 12 15 18 9"></polyline>
+                </svg>
+              </button>
+              <div class="dropdown-menu" id="user-dropdown">
+                <div id="user-dropdown-college-info"
+                  style="padding: 10px 14px; font-size: 12px; border-bottom: 1px solid var(--border); background: var(--bg); line-height: 1.4;">
+                </div>
+                <button class="dropdown-item" onclick="handleSignOut()">
+                  <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                    <path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4"></path>
+                    <polyline points="16 17 21 12 16 7"></polyline>
+                    <line x1="21" y1="12" x2="9" y2="12"></line>
+                  </svg>
+                  Sign out
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+      </header>
+
+      <!-- App Main Content Area -->
+      <main id="app">
+        <div id="loading-spinner" style="text-align:center; padding: 60px 0; color: var(--text-muted);">
+          <svg width="32" height="32" viewBox="0 0 24 24" fill="none" stroke="#4F46E5" stroke-width="2"
+            stroke-linecap="round" stroke-linejoin="round" style="animation: spin 1s linear infinite;">
+            <line x1="12" y1="2" x2="12" y2="6"></line>
+            <line x1="12" y1="18" x2="12" y2="22"></line>
+            <line x1="4.93" y1="4.93" x2="7.76" y2="7.76"></line>
+            <line x1="16.24" y1="16.24" x2="19.07" y2="19.07"></line>
+            <line x1="2" y1="12" x2="6" y2="12"></line>
+            <line x1="18" y1="12" x2="22" y2="12"></line>
+            <line x1="4.93" y1="19.07" x2="7.76" y2="16.24"></line>
+            <line x1="16.24" y1="7.76" x2="19.07" y2="4.93"></line>
+          </svg>
+          <div style="margin-top:12px; font-weight:500;">Loading ChronoGraph...</div>
+        </div>
+        <div id="page-content"></div>
+      </main>
     </div>
-    <div id="page-content"></div>
-  </main>
+  </div>
 
   <!-- Modals & Toasts -->
   <div id="toast-container" aria-live="polite"></div>
@@ -665,11 +1456,13 @@
       </div>
       <form id="add-venue-form" onsubmit="handleCreateVenueSubmit(event)">
         <p style="font-size: 13px; color: var(--text-muted); margin-bottom: 16px;">
-          Add a new venue to <strong id="add-venue-college-name" style="color:var(--primary);"></strong>. All events and colleagues from this college will be able to schedule in this venue.
+          Add a new venue to <strong id="add-venue-college-name" style="color:var(--primary);"></strong>. All events and
+          colleagues from this college will be able to schedule in this venue.
         </p>
         <div class="form-group">
           <label class="form-label" for="new-venue-name">Venue Name</label>
-          <input type="text" id="new-venue-name" class="form-control" placeholder="e.g. Mechanical Seminar Hall 3" required maxlength="80">
+          <input type="text" id="new-venue-name" class="form-control" placeholder="e.g. Mechanical Seminar Hall 3"
+            required maxlength="80">
         </div>
         <div id="add-venue-error" class="input-error" style="display:none; margin-bottom:12px;"></div>
         <div style="display:flex; justify-content:flex-end; gap:10px; margin-top:20px;">
@@ -695,14 +1488,17 @@
         <div class="grid-2">
           <div class="form-group">
             <label class="form-label" for="add-date">Date</label>
-            <input type="date" id="add-date" class="form-control" value="2026-10-26" required onchange="triggerConflictCheck()">
+            <input type="date" id="add-date" class="form-control" value="2026-10-26" required
+              onchange="triggerConflictCheck()">
           </div>
           <div class="form-group">
             <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 4px;">
               <label class="form-label" for="add-venue" style="margin-bottom: 0;">Venue</label>
-              <button type="button" class="btn btn-secondary btn-sm" onclick="openAddVenueModal()" style="font-size: 11px; padding: 2px 8px; line-height: 1.2;">+ Add New Venue</button>
+              <button type="button" class="btn btn-secondary btn-sm" onclick="openAddVenueModal()"
+                style="font-size: 11px; padding: 2px 8px; line-height: 1.2;">+ Add New Venue</button>
             </div>
-            <select id="add-venue" class="form-control" required onchange="if(this.value==='__custom__') openAddVenueModal();">
+            <select id="add-venue" class="form-control" required
+              onchange="if(this.value==='__custom__') openAddVenueModal();">
               <option value="Main Auditorium">Main Auditorium</option>
               <option value="Block C Seminar Hall">Block C Seminar Hall</option>
               <option value="CSE Lab 2">CSE Lab 2</option>
@@ -713,11 +1509,13 @@
         <div class="grid-2">
           <div class="form-group">
             <label class="form-label" for="add-st">Start Time</label>
-            <input type="time" id="add-st" class="form-control" value="10:00" required onchange="triggerConflictCheck()">
+            <input type="time" id="add-st" class="form-control" value="10:00" required
+              onchange="triggerConflictCheck()">
           </div>
           <div class="form-group">
             <label class="form-label" for="add-et">End Time</label>
-            <input type="time" id="add-et" class="form-control" value="11:30" required onchange="triggerConflictCheck()">
+            <input type="time" id="add-et" class="form-control" value="11:30" required
+              onchange="triggerConflictCheck()">
           </div>
         </div>
         <div class="grid-2">
@@ -742,7 +1540,8 @@
         </div>
 
         <!-- Live conflict status banner -->
-        <div id="live-conflict-status" style="margin: 14px 0; padding: 10px 14px; border-radius: 8px; font-size: 13px; display: none;"></div>
+        <div id="live-conflict-status"
+          style="margin: 14px 0; padding: 10px 14px; border-radius: 8px; font-size: 13px; display: none;"></div>
 
         <div style="display:flex; justify-content:flex-end; gap:10px; margin-top:20px;">
           <button type="button" class="btn btn-secondary" onclick="closeModal('add-event-modal')">Cancel</button>
@@ -758,7 +1557,8 @@
       <div class="modal-header">
         <div>
           <h3>Reschedule Sandbox (What-If)</h3>
-          <p style="font-size:12px; color:var(--text-muted); margin-top:2px;" id="reschedule-modal-subtitle">Event ID</p>
+          <p style="font-size:12px; color:var(--text-muted); margin-top:2px;" id="reschedule-modal-subtitle">Event ID
+          </p>
         </div>
         <button class="modal-close" onclick="closeModal('reschedule-modal')">&times;</button>
       </div>
@@ -778,19 +1578,26 @@
         </div>
       </div>
 
-      <div id="reschedule-preview-result" style="border: 1px solid var(--border); border-radius: 8px; padding: 16px; background: #FAFAFC; margin-bottom: 20px;">
-        <div style="color:var(--text-muted); font-size:13px; text-align:center;">Calculating impact ripple and finding alternative slots...</div>
+      <div id="reschedule-preview-result"
+        style="border: 1px solid var(--border); border-radius: 8px; padding: 16px; background: #FAFAFC; margin-bottom: 20px;">
+        <div style="color:var(--text-muted); font-size:13px; text-align:center;">Calculating impact ripple and finding
+          alternative slots...</div>
       </div>
 
       <div style="display:flex; justify-content:space-between; align-items:center;">
         <button type="button" class="btn btn-secondary" onclick="closeModal('reschedule-modal')">Discard</button>
-        <button type="button" class="btn btn-primary" id="resched-commit-btn" onclick="commitReschedule()">Commit Reschedule</button>
+        <button type="button" class="btn btn-primary" id="resched-commit-btn" onclick="commitReschedule()">Commit
+          Reschedule</button>
       </div>
     </div>
   </div>
 
   <style>
-    @keyframes spin { 100% { transform: rotate(360deg); } }
+    @keyframes spin {
+      100% {
+        transform: rotate(360deg);
+      }
+    }
   </style>
 
   <!-- Application Script -->
@@ -952,8 +1759,10 @@
     }
 
     function toggleMobileNav() {
+      const sidebar = document.getElementById('app-sidebar');
+      if (sidebar) sidebar.classList.toggle('open');
       const nl = document.getElementById('main-nav-links');
-      nl.classList.toggle('open');
+      if (nl) nl.classList.toggle('open');
     }
 
     // API Wrapper
@@ -999,9 +1808,23 @@
       const userSec = document.getElementById('user-profile-section');
       const navLinks = document.getElementById('main-nav-links');
       if (AppState.user) {
+        document.body.classList.add('is-authenticated');
         userSec.style.display = 'flex';
         navLinks.style.display = 'flex';
         document.getElementById('user-name-text').textContent = AppState.user.full_name.split(' ')[0];
+
+        const avatar = document.getElementById('user-avatar-initials');
+        if (avatar && AppState.user.full_name) {
+          const parts = AppState.user.full_name.trim().split(/\s+/);
+          avatar.textContent = parts.length > 1 ? (parts[0][0] + parts[parts.length - 1][0]).toUpperCase() : parts[0][0].toUpperCase();
+        }
+
+        const sideCol = document.getElementById('sidebar-college-name');
+        if (sideCol) {
+          sideCol.textContent = AppState.user.college || 'Karunya Institute';
+          sideCol.title = AppState.user.college || 'Karunya Institute';
+        }
+
         const colBadge = document.getElementById('user-college-badge');
         if (colBadge) {
           colBadge.textContent = AppState.user.college || 'Karunya Institute of Technology and Sciences';
@@ -1012,6 +1835,7 @@
           colInfo.innerHTML = `<strong>${escapeHtml(AppState.user.full_name)}</strong><br><span style="font-size:11px; color:var(--text-muted);">${escapeHtml(AppState.user.college || 'Karunya Institute of Technology and Sciences')}</span>`;
         }
       } else {
+        document.body.classList.remove('is-authenticated');
         userSec.style.display = 'none';
         navLinks.style.display = 'none';
       }
@@ -1037,6 +1861,24 @@
       const activeNavId = 'nav-' + route.replace('#/', '');
       const activeNavEl = document.getElementById(activeNavId);
       if (activeNavEl) activeNavEl.classList.add('active');
+
+      // Update breadcrumb
+      const breadcrumbEl = document.getElementById('page-breadcrumb-title');
+      if (breadcrumbEl) {
+        const titleMap = {
+          '#/dashboard': 'Dashboard',
+          '#/events': 'Events Directory',
+          '#/schedule': 'Schedule & Calendar',
+          '#/conflicts': 'Conflict Ripple Graph',
+          '#/tree': 'AVL Tree Visualizer',
+          '#/benchmarks': 'Algorithm Benchmarks'
+        };
+        breadcrumbEl.textContent = titleMap[route] || 'Overview';
+      }
+
+      // Close mobile drawer on route change
+      const sidebar = document.getElementById('app-sidebar');
+      if (sidebar) sidebar.classList.remove('open');
 
       renderRoute(route);
     }
@@ -1153,7 +1995,7 @@
 
     async function quickDemoSignIn(email, pwd = 'Demo@1234') {
       fillDemoCredentials(email, pwd);
-      await handleSignInSubmit({ preventDefault: () => {} });
+      await handleSignInSubmit({ preventDefault: () => { } });
     }
 
     function togglePasswordVisibility(id) {
@@ -1355,29 +2197,74 @@
           </button>
         </div>
 
+        <!-- Quick Action Pills Bar -->
+        <div class="quick-actions-bar">
+          <button class="action-pill-btn" onclick="openAddEventModal()">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><line x1="12" y1="5" x2="12" y2="19"></line><line x1="5" y1="12" x2="19" y2="12"></line></svg>
+            <span>Schedule Event</span>
+          </button>
+          <button class="action-pill-btn" onclick="openAddVenueModal()">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="12" y1="5" x2="12" y2="19"></line><line x1="5" y1="12" x2="19" y2="12"></line></svg>
+            <span>Add Venue</span>
+          </button>
+          <button class="action-pill-btn" onclick="handleUndo()" title="Revert last tree mutation">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M3 7v6h6"></path><path d="M21 17a9 9 0 0 0-9-9 9 9 0 0 0-6 2.3L3 13"></path></svg>
+            <span>Undo State</span>
+          </button>
+          <button class="action-pill-btn" onclick="handleRedo()" title="Redo last reverted tree mutation">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 7v6h-6"></path><path d="M3 17a9 9 0 0 1 9-9 9 9 0 0 1 6 2.3l3 2.7"></path></svg>
+            <span>Redo State</span>
+          </button>
+          <a href="#/tree" class="action-pill-btn">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="11" cy="11" r="8"></circle><line x1="21" y1="21" x2="16.65" y2="16.65"></line></svg>
+            <span>Find Earliest Slot</span>
+          </a>
+        </div>
+
         <!-- 4 Stat Cards -->
         <div class="grid-4" style="margin-bottom: 24px;">
           <div class="stat-card">
-            <div class="stat-title">TOTAL EVENTS</div>
-            <div class="stat-value">${events.length}</div>
-            <div class="stat-sub">${escapeHtml(AppState.user?.college || 'Campus Venues')}</div>
-          </div>
-          <div class="stat-card">
-            <div class="stat-title">TODAY'S EVENTS (${sampleDate})</div>
-            <div class="stat-value">${todaysEvents.length}</div>
-            <div class="stat-sub">Scheduled for today</div>
-          </div>
-          <div class="stat-card">
-            <div class="stat-title">ACTIVE CONFLICTS</div>
-            <div class="stat-value" style="color: ${timeConflicts.length > 0 ? 'var(--danger)' : 'var(--success)'};">
-              ${timeConflicts.length}
+            <div class="stat-card-header">
+              <div class="stat-title">Total Events</div>
+              <div class="stat-icon-wrapper" style="background: #EEF2FF; color: #4F46E5;">
+                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="4" width="18" height="18" rx="2" ry="2"></rect><line x1="16" y1="2" x2="16" y2="6"></line><line x1="8" y1="2" x2="8" y2="6"></line><line x1="3" y1="10" x2="21" y2="10"></line></svg>
+              </div>
             </div>
+            <div class="stat-value">${events.length}</div>
+            <div class="stat-sub"><span style="color:var(--primary); font-weight:600;">Campus Venues</span> · ${escapeHtml(AppState.user?.college || '')}</div>
+          </div>
+
+          <div class="stat-card">
+            <div class="stat-card-header">
+              <div class="stat-title">Today's Schedule</div>
+              <div class="stat-icon-wrapper" style="background: #F0F9FF; color: #0284C7;">
+                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"></circle><polyline points="12 6 12 12 16 14"></polyline></svg>
+              </div>
+            </div>
+            <div class="stat-value">${todaysEvents.length}</div>
+            <div class="stat-sub">${sampleDate}</div>
+          </div>
+
+          <div class="stat-card">
+            <div class="stat-card-header">
+              <div class="stat-title">Active Conflicts</div>
+              <div class="stat-icon-wrapper" style="background: ${timeConflicts.length > 0 ? '#FEF2F2' : '#ECFDF5'}; color: ${timeConflicts.length > 0 ? '#EF4444' : '#10B981'};">
+                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"></circle><line x1="12" y1="8" x2="12" y2="12"></line><line x1="12" y1="16" x2="12.01" y2="16"></line></svg>
+              </div>
+            </div>
+            <div class="stat-value" style="color: ${timeConflicts.length > 0 ? 'var(--danger)' : 'var(--success)'};">${timeConflicts.length}</div>
             <div class="stat-sub">${graph.components.length} conflict clusters</div>
           </div>
+
           <div class="stat-card">
-            <div class="stat-title">AVL HEIGHT</div>
+            <div class="stat-card-header">
+              <div class="stat-title">AVL Height</div>
+              <div class="stat-icon-wrapper" style="background: #FFFBEB; color: #D97706;">
+                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="5" r="3"></circle><circle cx="6" cy="19" r="3"></circle><circle cx="18" cy="19" r="3"></circle><path d="M12 8v4M12 12l-4 4M12 12l4 4"/></svg>
+              </div>
+            </div>
             <div class="stat-value">${stats.height}</div>
-            <div class="stat-sub">Balanced · Rotations: ${stats.rotations}</div>
+            <div class="stat-sub">Strict O(log n) · Rotations: ${stats.rotations}</div>
           </div>
         </div>
 
@@ -1407,8 +2294,8 @@
             ` : `
               <div style="display:flex; flex-direction:column; gap:10px;">
                 ${todaysEvents.map(ev => {
-                  const vStyle = getVenueStyle(ev.venue);
-                  return `
+        const vStyle = getVenueStyle(ev.venue);
+        return `
                     <div style="display:flex; align-items:center; justify-content:space-between; padding:10px 14px; background:var(--bg); border-radius:8px; border-left:3px solid ${vStyle.border};">
                       <div>
                         <div style="font-weight:600; font-size:13px;">${escapeHtml(ev.name)}</div>
@@ -1419,7 +2306,7 @@
                       </div>
                     </div>
                   `;
-                }).join('')}
+      }).join('')}
               </div>
             `}
           </div>
@@ -1914,43 +2801,43 @@
             <!-- Header Row -->
             <div class="timeline-header-cell">Time</div>
             ${days.map(d => {
-              const dt = new Date(d + 'T00:00:00');
-              const dayName = dt.toLocaleDateString('en-US', { weekday: 'short' });
-              return `<div class="timeline-header-cell">${dayName} <span class="mono" style="font-size:11px; opacity:0.7;">${d.slice(5)}</span></div>`;
-            }).join('')}
+        const dt = new Date(d + 'T00:00:00');
+        const dayName = dt.toLocaleDateString('en-US', { weekday: 'short' });
+        return `<div class="timeline-header-cell">${dayName} <span class="mono" style="font-size:11px; opacity:0.7;">${d.slice(5)}</span></div>`;
+      }).join('')}
 
             <!-- Time column: 8:00 to 20:00 -->
             <div class="timeline-time-col">
               ${Array.from({ length: 12 }, (_, i) => {
-                const hour = 8 + i;
-                return `<div class="timeline-time-slot">${hour < 10 ? '0' : ''}${hour}:00</div>`;
-              }).join('')}
+        const hour = 8 + i;
+        return `<div class="timeline-time-slot">${hour < 10 ? '0' : ''}${hour}:00</div>`;
+      }).join('')}
             </div>
 
             <!-- 7 Day Columns -->
             ${days.map(d => {
-              const dayEvents = events.filter(e => e.date === d);
-              return `
+        const dayEvents = events.filter(e => e.date === d);
+        return `
                 <div class="timeline-day-col" id="col-${d}">
                   ${dayEvents.map(ev => {
-                    const [sh, sm] = ev.start_time.split(':').map(Number);
-                    const [eh, em] = ev.end_time.split(':').map(Number);
-                    const startMinutesFrom8 = (sh - 8) * 60 + sm;
-                    const durationMinutes = (eh - sh) * 60 + (em - sm);
+          const [sh, sm] = ev.start_time.split(':').map(Number);
+          const [eh, em] = ev.end_time.split(':').map(Number);
+          const startMinutesFrom8 = (sh - 8) * 60 + sm;
+          const durationMinutes = (eh - sh) * 60 + (em - sm);
 
-                    // 52px per 60 minutes
-                    const topPx = Math.max(0, (startMinutesFrom8 / 60) * 52);
-                    const heightPx = Math.max(22, (durationMinutes / 60) * 52 - 2);
+          // 52px per 60 minutes
+          const topPx = Math.max(0, (startMinutesFrom8 / 60) * 52);
+          const heightPx = Math.max(22, (durationMinutes / 60) * 52 - 2);
 
-                    const vStyle = getVenueStyle(ev.venue);
+          const vStyle = getVenueStyle(ev.venue);
 
-                    // Check if event has conflict on same date
-                    const isConflicted = dayEvents.some(other => (
-                      other.id !== ev.id &&
-                      Math.max(other.start_minute, ev.start_minute) < Math.min(other.end_minute, ev.end_minute)
-                    ));
+          // Check if event has conflict on same date
+          const isConflicted = dayEvents.some(other => (
+            other.id !== ev.id &&
+            Math.max(other.start_minute, ev.start_minute) < Math.min(other.end_minute, ev.end_minute)
+          ));
 
-                    return `
+          return `
                       <div class="event-block ${isConflicted ? 'conflicted' : ''}"
                            style="top:${topPx}px; height:${heightPx}px; background:${vStyle.bg}; border-color:${vStyle.border}; color:${vStyle.text};"
                            onclick="openRescheduleModal('${ev.id}')"
@@ -1959,10 +2846,10 @@
                         <div class="event-block-time">${ev.start_time} - ${ev.end_time}</div>
                       </div>
                     `;
-                  }).join('')}
+        }).join('')}
                 </div>
               `;
-            }).join('')}
+      }).join('')}
           </div>
         </div>
       `;
@@ -2045,8 +2932,8 @@
             <h3 style="font-size: 15px; font-weight:600; margin-bottom: 12px;">Conflict Clusters (${components.length})</h3>
             <div style="display:flex; flex-direction:column; gap:8px; max-height: 480px; overflow-y:auto;">
               ${components.map((c, idx) => {
-                const isSelected = idx === AppState.selectedClusterIndex;
-                return `
+        const isSelected = idx === AppState.selectedClusterIndex;
+        return `
                   <div onclick="selectCluster(${idx})" style="padding:10px 14px; border-radius:8px; border:1px solid ${isSelected ? 'var(--primary)' : 'var(--border)'}; background:${isSelected ? 'var(--primary-light)' : 'var(--surface)'}; cursor:pointer;">
                     <div style="display:flex; justify-content:space-between; align-items:center;">
                       <strong style="font-size:13px;">Cluster #${idx + 1}</strong>
@@ -2057,7 +2944,7 @@
                     </div>
                   </div>
                 `;
-              }).join('')}
+      }).join('')}
             </div>
           </div>
 
@@ -3053,8 +3940,8 @@
             </thead>
             <tbody>
               ${data.sizes.map((n, i) => {
-                const spd = (data.linear_scan_ms[i] / (data.avl_gap_pruned_ms[i] || 0.001)).toFixed(1);
-                return `
+          const spd = (data.linear_scan_ms[i] / (data.avl_gap_pruned_ms[i] || 0.001)).toFixed(1);
+          return `
                   <tr>
                     <td>${n}</td>
                     <td style="color:var(--success); font-weight:600;">${data.avl_gap_pruned_ms[i]} ms</td>
@@ -3062,7 +3949,7 @@
                     <td style="font-weight:700; color:var(--success);">${spd}x</td>
                   </tr>
                 `;
-              }).join('')}
+        }).join('')}
             </tbody>
           </table>
         `;
@@ -3105,4 +3992,5 @@
     document.addEventListener('DOMContentLoaded', initApp);
   </script>
 </body>
+
 </html>
