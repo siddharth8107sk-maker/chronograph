@@ -627,12 +627,14 @@
         <a href="#/benchmarks" class="nav-item" id="nav-benchmarks">Benchmarks</a>
       </nav>
 
-      <div class="user-profile" id="user-profile-section">
+      <div class="user-profile" id="user-profile-section" style="display:flex; align-items:center; gap:8px;">
+        <span id="user-college-badge" class="badge badge-primary" style="font-size: 11px; max-width: 170px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;"></span>
         <button class="user-btn" onclick="toggleUserDropdown()" id="user-display-name">
           <span id="user-name-text">Account</span>
           <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="6 9 12 15 18 9"></polyline></svg>
         </button>
         <div class="dropdown-menu" id="user-dropdown">
+          <div id="user-dropdown-college-info" style="padding: 10px 14px; font-size: 12px; border-bottom: 1px solid var(--border); background: var(--bg); line-height: 1.4;"></div>
           <button class="dropdown-item" onclick="handleSignOut()">
             <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4"></path><polyline points="16 17 21 12 16 7"></polyline><line x1="21" y1="12" x2="9" y2="12"></line></svg>
             Sign out
@@ -654,6 +656,30 @@
   <!-- Modals & Toasts -->
   <div id="toast-container" aria-live="polite"></div>
 
+  <!-- Add Campus Venue Modal -->
+  <div class="modal-overlay" id="add-venue-modal" onclick="handleModalBackdropClick(event, 'add-venue-modal')">
+    <div class="modal-box" style="max-width: 440px;">
+      <div class="modal-header">
+        <h3>Add Campus Venue</h3>
+        <button class="modal-close" onclick="closeModal('add-venue-modal')">&times;</button>
+      </div>
+      <form id="add-venue-form" onsubmit="handleCreateVenueSubmit(event)">
+        <p style="font-size: 13px; color: var(--text-muted); margin-bottom: 16px;">
+          Add a new venue to <strong id="add-venue-college-name" style="color:var(--primary);"></strong>. All events and colleagues from this college will be able to schedule in this venue.
+        </p>
+        <div class="form-group">
+          <label class="form-label" for="new-venue-name">Venue Name</label>
+          <input type="text" id="new-venue-name" class="form-control" placeholder="e.g. Mechanical Seminar Hall 3" required maxlength="80">
+        </div>
+        <div id="add-venue-error" class="input-error" style="display:none; margin-bottom:12px;"></div>
+        <div style="display:flex; justify-content:flex-end; gap:10px; margin-top:20px;">
+          <button type="button" class="btn btn-secondary" onclick="closeModal('add-venue-modal')">Cancel</button>
+          <button type="submit" class="btn btn-primary" id="save-venue-btn">Add Venue</button>
+        </div>
+      </form>
+    </div>
+  </div>
+
   <!-- Add Event Modal -->
   <div class="modal-overlay" id="add-event-modal" onclick="handleModalBackdropClick(event, 'add-event-modal')">
     <div class="modal-box">
@@ -672,8 +698,11 @@
             <input type="date" id="add-date" class="form-control" value="2026-10-26" required onchange="triggerConflictCheck()">
           </div>
           <div class="form-group">
-            <label class="form-label" for="add-venue">Venue</label>
-            <select id="add-venue" class="form-control" required>
+            <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 4px;">
+              <label class="form-label" for="add-venue" style="margin-bottom: 0;">Venue</label>
+              <button type="button" class="btn btn-secondary btn-sm" onclick="openAddVenueModal()" style="font-size: 11px; padding: 2px 8px; line-height: 1.2;">+ Add New Venue</button>
+            </div>
+            <select id="add-venue" class="form-control" required onchange="if(this.value==='__custom__') openAddVenueModal();">
               <option value="Main Auditorium">Main Auditorium</option>
               <option value="Block C Seminar Hall">Block C Seminar Hall</option>
               <option value="CSE Lab 2">CSE Lab 2</option>
@@ -769,6 +798,7 @@
     // State
     const AppState = {
       user: null,
+      venues: [],
       events: [],
       currentRoute: '',
       treeData: null,
@@ -794,11 +824,70 @@
       { bg: 'var(--venue-5)', border: 'var(--venue-border-5)', text: 'var(--venue-text-5)' },
     ];
 
+    const COLLEGE_VENUES = {
+      'Karunya Institute of Technology and Sciences': [
+        'Main Auditorium',
+        'Block C Seminar Hall',
+        'CSE Lab 2',
+        'Open Air Theatre'
+      ],
+      'Vellore Institute of Technology': [
+        'Anna Auditorium',
+        'Technology Tower Lab 1',
+        'SJT Seminar Hall',
+        'Outdoor Amphitheatre'
+      ],
+      'PSG College of Arts and Science': [
+        'GRD Auditorium',
+        'Commerce Computer Lab',
+        'Science Block Seminar Hall',
+        'Kalaikarangal Quadrangle'
+      ]
+    };
+
+    async function loadCollegeVenues() {
+      if (!AppState.user) {
+        AppState.venues = [];
+        return [];
+      }
+      try {
+        const res = await apiRequest('/api/venues');
+        if (res.ok && Array.isArray(res.data) && res.data.length > 0) {
+          AppState.venues = res.data;
+        } else {
+          const col = AppState.user?.college || 'Karunya Institute of Technology and Sciences';
+          AppState.venues = [...(COLLEGE_VENUES[col] || COLLEGE_VENUES['Karunya Institute of Technology and Sciences'])];
+        }
+      } catch (err) {
+        console.error('Failed loading venues:', err);
+      }
+      return AppState.venues;
+    }
+
+    function getCollegeVenues() {
+      if (AppState.venues && AppState.venues.length > 0) {
+        return AppState.venues;
+      }
+      const col = AppState.user?.college || 'Karunya Institute of Technology and Sciences';
+      return COLLEGE_VENUES[col] || COLLEGE_VENUES['Karunya Institute of Technology and Sciences'];
+    }
+
     const VENUE_MAP = {
+      // Karunya
       'Main Auditorium': 0,
       'Block C Seminar Hall': 1,
       'CSE Lab 2': 2,
-      'Open Air Theatre': 3
+      'Open Air Theatre': 3,
+      // VIT
+      'Anna Auditorium': 0,
+      'Technology Tower Lab 1': 1,
+      'SJT Seminar Hall': 2,
+      'Outdoor Amphitheatre': 3,
+      // PSG
+      'GRD Auditorium': 0,
+      'Commerce Computer Lab': 1,
+      'Science Block Seminar Hall': 2,
+      'Kalaikarangal Quadrangle': 3
     };
 
     function getVenueStyle(venueName) {
@@ -890,9 +979,11 @@
       const authRes = await apiRequest('/api/auth/me');
       if (authRes.ok && authRes.data) {
         AppState.user = authRes.data;
+        await loadCollegeVenues();
         updateUserUI();
       } else {
         AppState.user = null;
+        AppState.venues = [];
         updateUserUI();
       }
 
@@ -911,6 +1002,15 @@
         userSec.style.display = 'flex';
         navLinks.style.display = 'flex';
         document.getElementById('user-name-text').textContent = AppState.user.full_name.split(' ')[0];
+        const colBadge = document.getElementById('user-college-badge');
+        if (colBadge) {
+          colBadge.textContent = AppState.user.college || 'Karunya Institute of Technology and Sciences';
+          colBadge.title = AppState.user.college || 'Karunya Institute of Technology and Sciences';
+        }
+        const colInfo = document.getElementById('user-dropdown-college-info');
+        if (colInfo) {
+          colInfo.innerHTML = `<strong>${escapeHtml(AppState.user.full_name)}</strong><br><span style="font-size:11px; color:var(--text-muted);">${escapeHtml(AppState.user.college || 'Karunya Institute of Technology and Sciences')}</span>`;
+        }
       } else {
         userSec.style.display = 'none';
         navLinks.style.display = 'none';
@@ -1004,13 +1104,34 @@
             </form>
 
             <div style="margin: 20px 0; border-top: 1px solid var(--border); position: relative; text-align: center;">
-              <span style="background: var(--surface); padding: 0 10px; font-size: 12px; color: var(--text-muted); position: relative; top: -10px;">or</span>
+              <span style="background: var(--surface); padding: 0 10px; font-size: 11px; text-transform: uppercase; letter-spacing: 0.5px; color: var(--text-muted); position: relative; top: -10px;">Select Demo College</span>
             </div>
 
-            <button type="button" class="btn btn-secondary" onclick="fillDemoCredentials()" style="width: 100%;">
-              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"></path><circle cx="12" cy="7" r="4"></circle></svg>
-              Use demo account
-            </button>
+            <div style="display: flex; flex-direction: column; gap: 8px;">
+              <button type="button" class="btn btn-secondary" onclick="quickDemoSignIn('karunya@chronograph.app', 'Demo@1234')" style="width: 100%; display: flex; justify-content: space-between; align-items: center; text-align: left; padding: 10px 12px; border-radius: 8px;">
+                <div>
+                  <div style="font-weight: 600; font-size: 12.5px; color: var(--text);">Karunya Inst. of Tech. & Sciences</div>
+                  <div style="font-size: 11px; color: var(--text-muted);">karunya@chronograph.app · Prof. Sarah Jenkins</div>
+                </div>
+                <span class="badge badge-primary" style="font-size: 10px; padding: 3px 7px;">Login &rarr;</span>
+              </button>
+
+              <button type="button" class="btn btn-secondary" onclick="quickDemoSignIn('vit@chronograph.app', 'Demo@1234')" style="width: 100%; display: flex; justify-content: space-between; align-items: center; text-align: left; padding: 10px 12px; border-radius: 8px;">
+                <div>
+                  <div style="font-weight: 600; font-size: 12.5px; color: var(--text);">Vellore Institute of Technology</div>
+                  <div style="font-size: 11px; color: var(--text-muted);">vit@chronograph.app · Dr. Rajesh Kumar</div>
+                </div>
+                <span class="badge badge-primary" style="font-size: 10px; padding: 3px 7px;">Login &rarr;</span>
+              </button>
+
+              <button type="button" class="btn btn-secondary" onclick="quickDemoSignIn('psg@chronograph.app', 'Demo@1234')" style="width: 100%; display: flex; justify-content: space-between; align-items: center; text-align: left; padding: 10px 12px; border-radius: 8px;">
+                <div>
+                  <div style="font-weight: 600; font-size: 12.5px; color: var(--text);">PSG College of Arts and Science</div>
+                  <div style="font-size: 11px; color: var(--text-muted);">psg@chronograph.app · Dr. Ananya Iyer</div>
+                </div>
+                <span class="badge badge-primary" style="font-size: 10px; padding: 3px 7px;">Login &rarr;</span>
+              </button>
+            </div>
 
             <div style="text-align: center; margin-top: 20px; font-size: 13px; color: var(--text-muted);">
               Don't have an account? <a href="#/signup" style="font-weight: 600;">Create account</a>
@@ -1020,10 +1141,19 @@
       `;
     }
 
-    function fillDemoCredentials() {
-      document.getElementById('signin-email').value = 'demo@chronograph.app';
-      document.getElementById('signin-pwd').value = 'Demo@1234';
+    function fillDemoCredentials(email = 'karunya@chronograph.app', pwd = 'Demo@1234') {
+      const emailInput = document.getElementById('signin-email');
+      const pwdInput = document.getElementById('signin-pwd');
+      if (emailInput && pwdInput) {
+        emailInput.value = email;
+        pwdInput.value = pwd;
+      }
       showToast('Demo credentials filled!', 'info');
+    }
+
+    async function quickDemoSignIn(email, pwd = 'Demo@1234') {
+      fillDemoCredentials(email, pwd);
+      await handleSignInSubmit({ preventDefault: () => {} });
     }
 
     function togglePasswordVisibility(id) {
@@ -1032,7 +1162,7 @@
     }
 
     async function handleSignInSubmit(e) {
-      e.preventDefault();
+      if (e && e.preventDefault) e.preventDefault();
       const email = document.getElementById('signin-email').value.trim();
       const password = document.getElementById('signin-pwd').value;
       const btn = document.getElementById('signin-btn');
@@ -1052,6 +1182,7 @@
 
       if (res.ok && res.data) {
         AppState.user = res.data;
+        await loadCollegeVenues();
         updateUserUI();
         showToast(`Welcome back, ${res.data.full_name}!`, 'success');
         window.location.hash = '#/dashboard';
@@ -1077,6 +1208,17 @@
               <div class="form-group">
                 <label class="form-label">Full Name</label>
                 <input type="text" id="signup-name" class="form-control" placeholder="Prof. Jane Doe" required>
+              </div>
+              <div class="form-group">
+                <label class="form-label">College / Institution</label>
+                <select id="signup-college" class="form-control" required style="cursor: pointer;">
+                  <option value="Karunya Institute of Technology and Sciences" selected>Karunya Institute of Technology and Sciences</option>
+                  <option value="Vellore Institute of Technology">Vellore Institute of Technology</option>
+                  <option value="PSG College of Arts and Science">PSG College of Arts and Science</option>
+                </select>
+                <div style="font-size: 11px; color: var(--text-muted); margin-top: 4px;">
+                  Users from the same college share the same campus event schedule and conflict graph.
+                </div>
               </div>
               <div class="form-group">
                 <label class="form-label">Email address</label>
@@ -1131,6 +1273,7 @@
     async function handleSignUpSubmit(e) {
       e.preventDefault();
       const full_name = document.getElementById('signup-name').value.trim();
+      const college = document.getElementById('signup-college').value;
       const email = document.getElementById('signup-email').value.trim();
       const password = document.getElementById('signup-pwd').value;
       const confirm = document.getElementById('signup-confirm').value;
@@ -1149,7 +1292,7 @@
 
       const res = await apiRequest('/api/auth/signup', {
         method: 'POST',
-        body: JSON.stringify({ full_name, email, password })
+        body: JSON.stringify({ full_name, college, email, password })
       });
 
       btn.disabled = false;
@@ -1157,6 +1300,7 @@
 
       if (res.ok && res.data) {
         AppState.user = res.data;
+        await loadCollegeVenues();
         updateUserUI();
         showToast('Account created successfully!', 'success');
         window.location.hash = '#/dashboard';
@@ -1169,6 +1313,7 @@
     async function handleSignOut() {
       await apiRequest('/api/auth/signout', { method: 'POST' });
       AppState.user = null;
+      AppState.venues = [];
       updateUserUI();
       showToast('Signed out', 'info');
       window.location.hash = '#/signin';
@@ -1202,7 +1347,7 @@
         <div class="page-header">
           <div>
             <h1>Dashboard</h1>
-            <p>Real-time overview of college events and AVL tree metrics</p>
+            <p>Real-time overview of events and AVL tree metrics · <strong style="color:var(--primary);">${escapeHtml(AppState.user?.college || 'College Portal')}</strong></p>
           </div>
           <button class="btn btn-primary" onclick="openAddEventModal()">
             <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><line x1="12" y1="5" x2="12" y2="19"></line><line x1="5" y1="12" x2="19" y2="12"></line></svg>
@@ -1215,7 +1360,7 @@
           <div class="stat-card">
             <div class="stat-title">TOTAL EVENTS</div>
             <div class="stat-value">${events.length}</div>
-            <div class="stat-sub">Across 4 campus venues</div>
+            <div class="stat-sub">${escapeHtml(AppState.user?.college || 'Campus Venues')}</div>
           </div>
           <div class="stat-card">
             <div class="stat-title">TODAY'S EVENTS (${sampleDate})</div>
@@ -1314,10 +1459,16 @@
             <h1>Events Directory</h1>
             <p>Manage, filter, and search events using Trie autocomplete and Hash table</p>
           </div>
-          <button class="btn btn-primary" onclick="openAddEventModal()">
-            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><line x1="12" y1="5" x2="12" y2="19"></line><line x1="5" y1="12" x2="19" y2="12"></line></svg>
-            Add Event
-          </button>
+          <div style="display: flex; gap: 8px;">
+            <button class="btn btn-secondary" onclick="openAddVenueModal()" title="Add a custom venue for your college">
+              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="12" y1="5" x2="12" y2="19"></line><line x1="5" y1="12" x2="19" y2="12"></line></svg>
+              Add Venue
+            </button>
+            <button class="btn btn-primary" onclick="openAddEventModal()">
+              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><line x1="12" y1="5" x2="12" y2="19"></line><line x1="5" y1="12" x2="19" y2="12"></line></svg>
+              Add Event
+            </button>
+          </div>
         </div>
 
         <div class="card" style="padding: 16px; margin-bottom: 20px;">
@@ -1337,10 +1488,7 @@
             <div style="flex: 1; min-width: 180px;">
               <select id="event-venue-filter" class="form-control" onchange="handleEventFilterChange()">
                 <option value="">All Venues</option>
-                <option value="Main Auditorium" ${eventsFilterVenue === 'Main Auditorium' ? 'selected' : ''}>Main Auditorium</option>
-                <option value="Block C Seminar Hall" ${eventsFilterVenue === 'Block C Seminar Hall' ? 'selected' : ''}>Block C Seminar Hall</option>
-                <option value="CSE Lab 2" ${eventsFilterVenue === 'CSE Lab 2' ? 'selected' : ''}>CSE Lab 2</option>
-                <option value="Open Air Theatre" ${eventsFilterVenue === 'Open Air Theatre' ? 'selected' : ''}>Open Air Theatre</option>
+                ${getCollegeVenues().map(v => `<option value="${escapeHtml(v)}" ${eventsFilterVenue === v ? 'selected' : ''}>${escapeHtml(v)}</option>`).join('')}
               </select>
             </div>
 
@@ -1526,9 +1674,76 @@
     // =================================================================
     // Live Conflict Checking & Add Event Modal
     // =================================================================
-    function openAddEventModal() {
+    async function openAddEventModal() {
       document.getElementById('live-conflict-status').style.display = 'none';
+      if (!AppState.venues || AppState.venues.length === 0) {
+        await loadCollegeVenues();
+      }
+      populateAddEventVenues();
       openModal('add-event-modal');
+    }
+
+    function populateAddEventVenues(selectedVenue = null) {
+      const venueSelect = document.getElementById('add-venue');
+      if (venueSelect) {
+        const venues = getCollegeVenues();
+        venueSelect.innerHTML = venues.map(v => `<option value="${escapeHtml(v)}">${escapeHtml(v)}</option>`).join('') +
+          `<option value="__custom__" style="color:var(--primary); font-weight:600;">+ Add New Venue...</option>`;
+        if (selectedVenue) {
+          venueSelect.value = selectedVenue;
+        }
+      }
+    }
+
+    function openAddVenueModal() {
+      const colSpan = document.getElementById('add-venue-college-name');
+      if (colSpan) {
+        colSpan.textContent = AppState.user?.college || 'your college';
+      }
+      const errEl = document.getElementById('add-venue-error');
+      if (errEl) errEl.style.display = 'none';
+      const input = document.getElementById('new-venue-name');
+      if (input) input.value = '';
+      openModal('add-venue-modal');
+    }
+
+    async function handleCreateVenueSubmit(e) {
+      e.preventDefault();
+      const input = document.getElementById('new-venue-name');
+      const errEl = document.getElementById('add-venue-error');
+      const btn = document.getElementById('save-venue-btn');
+      const name = (input.value || '').trim();
+      if (!name) return;
+
+      btn.disabled = true;
+      btn.textContent = 'Adding...';
+      errEl.style.display = 'none';
+
+      const res = await apiRequest('/api/venues', {
+        method: 'POST',
+        body: JSON.stringify({ name })
+      });
+
+      btn.disabled = false;
+      btn.textContent = 'Add Venue';
+
+      if (res.ok) {
+        closeModal('add-venue-modal');
+        input.value = '';
+        showToast(`Venue "${name}" added to ${AppState.user?.college || 'college'}!`, 'success');
+        await loadCollegeVenues();
+        populateAddEventVenues(name);
+
+        // Update venue filter on Events page if present
+        const filterSelect = document.getElementById('event-venue-filter');
+        if (filterSelect) {
+          const currentVal = filterSelect.value;
+          filterSelect.innerHTML = `<option value="">All Venues</option>` + getCollegeVenues().map(v => `<option value="${escapeHtml(v)}" ${currentVal === v ? 'selected' : ''}>${escapeHtml(v)}</option>`).join('');
+        }
+      } else {
+        errEl.textContent = res.error || 'Failed to add venue';
+        errEl.style.display = 'block';
+      }
     }
 
     let conflictCheckDebounce = null;
@@ -1586,6 +1801,13 @@
       const name = document.getElementById('add-title').value.trim();
       const date = document.getElementById('add-date').value;
       const venue = document.getElementById('add-venue').value;
+
+      if (venue === '__custom__' || !venue) {
+        showToast('Please select or add a valid campus venue', 'error');
+        openAddVenueModal();
+        return;
+      }
+
       const start_time = document.getElementById('add-st').value;
       const end_time = document.getElementById('add-et').value;
       const organizer = document.getElementById('add-org').value.trim();

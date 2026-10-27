@@ -53,6 +53,28 @@ def verify_password(password: str, password_hash: str, salt: bytes) -> bool:
     return secrets.compare_digest(dk, password_hash)
 
 
+DEFAULT_COLLEGE_VENUES = {
+    'Karunya Institute of Technology and Sciences': [
+        'Main Auditorium',
+        'Block C Seminar Hall',
+        'CSE Lab 2',
+        'Open Air Theatre'
+    ],
+    'Vellore Institute of Technology': [
+        'Anna Auditorium',
+        'Technology Tower Lab 1',
+        'SJT Seminar Hall',
+        'Outdoor Amphitheatre'
+    ],
+    'PSG College of Arts and Science': [
+        'GRD Auditorium',
+        'Commerce Computer Lab',
+        'Science Block Seminar Hall',
+        'Kalaikarangal Quadrangle'
+    ]
+}
+
+
 def init_db() -> None:
     """Initializes tables and seeds the demo account if not already present."""
     conn = get_db_connection()
@@ -65,7 +87,8 @@ def init_db() -> None:
         email TEXT UNIQUE NOT NULL,
         password_hash TEXT NOT NULL,
         salt BLOB NOT NULL,
-        created_at TEXT NOT NULL
+        created_at TEXT NOT NULL,
+        college TEXT NOT NULL DEFAULT 'Karunya Institute of Technology and Sciences'
     );
     """)
 
@@ -93,6 +116,7 @@ def init_db() -> None:
         priority INTEGER NOT NULL,
         depends_on TEXT,
         owner_user_id TEXT NOT NULL,
+        college TEXT DEFAULT 'Karunya Institute of Technology and Sciences',
         FOREIGN KEY (owner_user_id) REFERENCES users(id) ON DELETE CASCADE
     );
     """)
@@ -111,123 +135,261 @@ def init_db() -> None:
         depends_on TEXT,
         owner_user_id TEXT NOT NULL,
         created_at TEXT NOT NULL,
+        college TEXT DEFAULT 'Karunya Institute of Technology and Sciences',
         FOREIGN KEY (owner_user_id) REFERENCES users(id) ON DELETE CASCADE
     );
     """)
 
+    # Ensure schema migrations for existing database files
+    cur.execute("PRAGMA table_info(users)")
+    u_cols = [r[1] for r in cur.fetchall()]
+    if 'college' not in u_cols:
+        cur.execute("ALTER TABLE users ADD COLUMN college TEXT NOT NULL DEFAULT 'Karunya Institute of Technology and Sciences'")
+    cur.execute("UPDATE users SET college = 'Karunya Institute of Technology and Sciences' WHERE college = 'MIT College of Engineering' OR college IS NULL OR college = ''")
+
+    cur.execute("PRAGMA table_info(events)")
+    e_cols = [r[1] for r in cur.fetchall()]
+    if 'college' not in e_cols:
+        cur.execute("ALTER TABLE events ADD COLUMN college TEXT DEFAULT 'Karunya Institute of Technology and Sciences'")
+    cur.execute("UPDATE events SET college = 'Karunya Institute of Technology and Sciences' WHERE college = 'MIT College of Engineering' OR college IS NULL OR college = ''")
+
+    cur.execute("PRAGMA table_info(waitlist)")
+    w_cols = [r[1] for r in cur.fetchall()]
+    if 'college' not in w_cols:
+        cur.execute("ALTER TABLE waitlist ADD COLUMN college TEXT DEFAULT 'Karunya Institute of Technology and Sciences'")
+    cur.execute("UPDATE waitlist SET college = 'Karunya Institute of Technology and Sciences' WHERE college = 'MIT College of Engineering' OR college IS NULL OR college = ''")
+
+    # Venues table for college-specific campus venues
+    cur.execute("""
+    CREATE TABLE IF NOT EXISTS venues (
+        id TEXT PRIMARY KEY,
+        name TEXT NOT NULL,
+        college TEXT NOT NULL,
+        created_at TEXT NOT NULL,
+        created_by_user_id TEXT,
+        UNIQUE(name, college)
+    );
+    """)
+
+    # Populate default venues for the three colleges
+    now_ts = datetime.datetime.now().isoformat()
+    for col_name, v_names in DEFAULT_COLLEGE_VENUES.items():
+        for vn in v_names:
+            v_id = f"ven-{hashlib.md5(f'{col_name}:{vn}'.encode()).hexdigest()[:10]}"
+            cur.execute("""
+                INSERT OR IGNORE INTO venues (id, name, college, created_at, created_by_user_id)
+                VALUES (?, ?, ?, ?, ?)
+            """, (v_id, vn, col_name, now_ts, 'system'))
+
+    # Backfill venues from existing events
+    cur.execute("SELECT DISTINCT venue, college FROM events WHERE venue IS NOT NULL AND venue != ''")
+    for r in cur.fetchall():
+        vn = r['venue'].strip()
+        col_name = r['college'] or 'Karunya Institute of Technology and Sciences'
+        v_id = f"ven-{hashlib.md5(f'{col_name}:{vn}'.encode()).hexdigest()[:10]}"
+        cur.execute("""
+            INSERT OR IGNORE INTO venues (id, name, college, created_at, created_by_user_id)
+            VALUES (?, ?, ?, ?, ?)
+        """, (v_id, vn, col_name, now_ts, 'system'))
+
     conn.commit()
 
-    # Check if demo account exists
-    cur.execute("SELECT id FROM users WHERE email = 'demo@chronograph.app'")
-    demo_user = cur.fetchone()
-    if not demo_user:
-        seed_demo_account(conn)
+    # Check and seed demo accounts for all three colleges
+    seed_demo_accounts(conn)
 
     conn.close()
 
 
-def seed_demo_account(conn: sqlite3.Connection) -> None:
-    """Creates demo user (demo@chronograph.app / Demo@1234) and 40 realistic events."""
-    cur = conn.cursor()
-    user_id = "usr-demo-001"
+def seed_demo_accounts(conn: sqlite3.Connection) -> None:
+    """Seeds demo accounts and realistic events for all three colleges."""
     pwd_hash, salt = hash_password("Demo@1234")
     now_str = datetime.datetime.now().isoformat()
 
-    cur.execute("""
-        INSERT INTO users (id, full_name, email, password_hash, salt, created_at)
-        VALUES (?, ?, ?, ?, ?, ?)
-    """, (user_id, "Prof. Sarah Jenkins", "demo@chronograph.app", pwd_hash, salt, now_str))
+    seed_karunya_account(conn, pwd_hash, salt, now_str)
+    seed_vit_account(conn, pwd_hash, salt, now_str)
+    seed_psg_account(conn, pwd_hash, salt, now_str)
 
-    # 40 Realistic college events spanning 2 weeks
-    # Dates: 2026-10-26 to 2026-11-08
-    raw_events = [
-        # Week 1: Mon Oct 26
-        ("EVT-1001", "Hackathon Kickoff & Briefing", "2026-10-26", "09:00", "11:00", "Main Auditorium", "ACM Student Chapter", 1, None),
-        ("EVT-1002", "Placement Talk: Zoho Systems", "2026-10-26", "10:00", "12:00", "Main Auditorium", "Placement Cell", 2, None),  # Deliberate conflict with EVT-1001
-        ("EVT-1003", "Data Structures Lab Viva - Batch A", "2026-10-26", "13:00", "15:00", "CSE Lab 2", "Department of Computer Science", 1, None),
-        ("EVT-1004", "Robotics Club Hardware Sprint", "2026-10-26", "15:30", "18:00", "Block C Seminar Hall", "Robotics Club", 3, None),
 
-        # Tue Oct 27
-        ("EVT-1005", "Inter-Department Quiz Prelims", "2026-10-27", "09:30", "11:30", "Block C Seminar Hall", "Literary & Quiz Society", 3, None),
-        ("EVT-1006", "Web3 Workshop: Smart Contracts", "2026-10-27", "11:00", "13:00", "Block C Seminar Hall", "IEEE Student Branch", 3, None),  # Deliberate conflict with EVT-1005
-        ("EVT-1007", "NSS Blood Donation Camp", "2026-10-27", "09:00", "14:00", "Open Air Theatre", "NSS Unit", 1, None),
-        ("EVT-1008", "Data Structures Lab Viva - Batch B", "2026-10-27", "14:00", "16:00", "CSE Lab 2", "Department of Computer Science", 1, "EVT-1003"),
+# Backward compatibility alias
+seed_demo_account = seed_demo_accounts
 
-        # Wed Oct 28
-        ("EVT-1009", "Competitive Programming Contest", "2026-10-28", "10:00", "13:00", "CSE Lab 2", "ACM Student Chapter", 2, None),
-        ("EVT-1010", "AI Ethics Panel Discussion", "2026-10-28", "14:00", "16:00", "Main Auditorium", "Department of Computer Science", 2, None),
-        ("EVT-1011", "Cultural Night Dance Auditions", "2026-10-28", "16:30", "19:00", "Open Air Theatre", "Cultural Affairs", 4, None),
 
-        # Thu Oct 29
-        ("EVT-1012", "Placement Talk: Google Cloud", "2026-10-29", "09:30", "11:30", "Main Auditorium", "Placement Cell", 1, None),
-        ("EVT-1013", "Cybersecurity Capture The Flag", "2026-10-29", "11:00", "15:00", "CSE Lab 2", "ACM Student Chapter", 2, None),
-        ("EVT-1014", "Photography Club Photo Walk", "2026-10-29", "16:00", "18:00", "Open Air Theatre", "Cultural Affairs", 4, None),
+def seed_karunya_account(conn: sqlite3.Connection, pwd_hash: str, salt: bytes, now_str: str) -> None:
+    cur = conn.cursor()
+    cur.execute("SELECT id FROM users WHERE email = 'demo@chronograph.app'")
+    demo_row = cur.fetchone()
+    user_id = demo_row['id'] if demo_row else "usr-demo-001"
 
-        # Fri Oct 30
-        ("EVT-1015", "Hackathon 24hr Mentor Checkpoint", "2026-10-30", "10:00", "12:00", "Block C Seminar Hall", "ACM Student Chapter", 1, "EVT-1001"),
-        ("EVT-1016", "Open Source Contribution Clinic", "2026-10-30", "13:00", "15:30", "CSE Lab 2", "IEEE Student Branch", 3, None),
-        ("EVT-1017", "Acoustic Jam Session", "2026-10-30", "17:00", "19:30", "Open Air Theatre", "Cultural Affairs", 4, None),
-
-        # Sat Oct 31
-        ("EVT-1018", "Hackathon Final Presentations", "2026-10-31", "10:00", "13:00", "Main Auditorium", "ACM Student Chapter", 1, "EVT-1015"),
-        ("EVT-1019", "Hackathon Award Ceremony", "2026-10-31", "14:00", "16:00", "Main Auditorium", "ACM Student Chapter", 1, "EVT-1018"),
-
-        # Sun Nov 01
-        ("EVT-1020", "Campus Cleanup Green Drive", "2026-11-01", "08:00", "11:00", "Open Air Theatre", "NSS Unit", 3, None),
-        ("EVT-1021", "Drone Flying Demonstration", "2026-11-01", "15:00", "17:30", "Open Air Theatre", "Robotics Club", 3, None),
-
-        # Week 2: Mon Nov 02
-        ("EVT-1022", "Guest Lecture: Quantum Algorithms", "2026-11-02", "10:00", "12:00", "Block C Seminar Hall", "Department of Computer Science", 2, None),
-        ("EVT-1023", "Resume Review & Mock Interviews", "2026-11-02", "13:00", "16:00", "Block C Seminar Hall", "Placement Cell", 2, "EVT-1012"),
-        ("EVT-1024", "Database Internals Hands-on Lab", "2026-11-02", "14:00", "16:30", "CSE Lab 2", "Department of Computer Science", 2, None),
-
-        # Tue Nov 03
-        ("EVT-1025", "Inter-College Debate Championship", "2026-11-03", "09:00", "12:30", "Block C Seminar Hall", "Literary & Quiz Society", 2, None),
-        ("EVT-1026", "Faculty Research Symposium", "2026-11-03", "11:00", "14:00", "Block C Seminar Hall", "Department of Computer Science", 1, None),  # Deliberate conflict with EVT-1025
-        ("EVT-1027", "Mobile App Development BootCamp", "2026-11-03", "14:00", "17:00", "CSE Lab 2", "ACM Student Chapter", 3, None),
-
-        # Wed Nov 04
-        ("EVT-1028", "Placement Drive: Microsoft R&D", "2026-11-04", "09:00", "12:00", "Main Auditorium", "Placement Cell", 1, None),
-        ("EVT-1029", "Design Thinking & UI/UX Workshop", "2026-11-04", "13:00", "15:30", "Block C Seminar Hall", "IEEE Student Branch", 3, None),
-        ("EVT-1030", "Street Play & Theatrics Rehearsal", "2026-11-04", "16:00", "18:30", "Open Air Theatre", "Cultural Affairs", 4, None),
-
-        # Thu Nov 05
-        ("EVT-1031", "Annual Tech Fest Organizers Sync", "2026-11-05", "10:00", "12:00", "Main Auditorium", "Department of Computer Science", 2, None),
-        ("EVT-1032", "Compiler Design Project Reviews", "2026-11-05", "13:00", "16:00", "CSE Lab 2", "Department of Computer Science", 2, None),
-        ("EVT-1033", "Debate Finals & Valedictory", "2026-11-05", "15:00", "17:00", "Block C Seminar Hall", "Literary & Quiz Society", 2, "EVT-1025"),
-
-        # Fri Nov 06
-        ("EVT-1034", "Alumni Mentorship Roundtables", "2026-11-06", "10:30", "13:00", "Main Auditorium", "Placement Cell", 2, None),
-        ("EVT-1035", "Machine Learning Model Deployment", "2026-11-06", "14:00", "16:30", "CSE Lab 2", "IEEE Student Branch", 2, None),
-        ("EVT-1036", "College Band Concert Night", "2026-11-06", "17:30", "20:00", "Open Air Theatre", "Cultural Affairs", 4, None),
-
-        # Sat Nov 07
-        ("EVT-1037", "High-School Outreach Robotics Demo", "2026-11-07", "09:30", "12:30", "Main Auditorium", "Robotics Club", 3, None),
-        ("EVT-1038", "First Aid & Disaster Response Training", "2026-11-07", "13:00", "16:00", "Block C Seminar Hall", "NSS Unit", 2, None),
-
-        # Sun Nov 08
-        ("EVT-1039", "Stargazing Astronomy Night", "2026-11-08", "18:00", "20:30", "Open Air Theatre", "Literary & Quiz Society", 4, None),
-        ("EVT-1040", "Semester Project Showcase & Mixer", "2026-11-08", "14:00", "17:00", "Main Auditorium", "Department of Computer Science", 1, None),
-    ]
-
-    for eid, name, date, st, et, venue, org, prio, dep in raw_events:
-        sm = date_time_to_minutes(date, st)
-        em = date_time_to_minutes(date, et)
+    if not demo_row:
         cur.execute("""
-            INSERT INTO events (id, name, date, start_time, end_time, start_minute, end_minute, venue, organizer, priority, depends_on, owner_user_id)
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-        """, (eid, name, date, st, et, sm, em, venue, org, prio, dep, user_id))
+            INSERT INTO users (id, full_name, email, password_hash, salt, created_at, college)
+            VALUES (?, ?, ?, ?, ?, ?, ?)
+        """, (user_id, "Prof. Sarah Jenkins", "demo@chronograph.app", pwd_hash, salt, now_str, "Karunya Institute of Technology and Sciences"))
 
-    # Add 2 initial waitlisted events for the demo user
-    waitlisted = [
-        ("WLT-2001", "EVT-W1", "Cloud Infrastructure Architecture Lab", "2026-10-26", "10:30", "12:30", "CSE Lab 2", "ACM Student Chapter", 1, None),
-        ("WLT-2002", "EVT-W2", "Creative Writing Open Mic Session", "2026-10-27", "15:00", "16:30", "Open Air Theatre", "Literary & Quiz Society", 3, None)
-    ]
-    for wid, eid, name, date, st, et, venue, org, prio, dep in waitlisted:
+    # Also register karunya@chronograph.app alias
+    cur.execute("SELECT id FROM users WHERE email = 'karunya@chronograph.app'")
+    if not cur.fetchone():
         cur.execute("""
-            INSERT INTO waitlist (id, event_id, name, date, start_time, end_time, venue, organizer, priority, depends_on, owner_user_id, created_at)
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-        """, (wid, eid, name, date, st, et, venue, org, prio, dep, user_id, now_str))
+            INSERT INTO users (id, full_name, email, password_hash, salt, created_at, college)
+            VALUES (?, ?, ?, ?, ?, ?, ?)
+        """, ("usr-demo-karunya", "Prof. Sarah Jenkins", "karunya@chronograph.app", pwd_hash, salt, now_str, "Karunya Institute of Technology and Sciences"))
+
+    # Seed events if none exist for Karunya
+    cur.execute("SELECT COUNT(*) as cnt FROM events WHERE college = 'Karunya Institute of Technology and Sciences'")
+    if cur.fetchone()['cnt'] == 0:
+        raw_events = [
+            ("EVT-1001", "Hackathon Kickoff & Briefing", "2026-10-26", "09:00", "11:00", "Main Auditorium", "ACM Student Chapter", 1, None),
+            ("EVT-1002", "Placement Talk: Zoho Systems", "2026-10-26", "10:00", "12:00", "Main Auditorium", "Placement Cell", 2, None),
+            ("EVT-1003", "Data Structures Lab Viva - Batch A", "2026-10-26", "13:00", "15:00", "CSE Lab 2", "Department of Computer Science", 1, None),
+            ("EVT-1004", "Robotics Club Hardware Sprint", "2026-10-26", "15:30", "18:00", "Block C Seminar Hall", "Robotics Club", 3, None),
+            ("EVT-1005", "Inter-Department Quiz Prelims", "2026-10-27", "09:30", "11:30", "Block C Seminar Hall", "Literary & Quiz Society", 3, None),
+            ("EVT-1006", "Web3 Workshop: Smart Contracts", "2026-10-27", "11:00", "13:00", "Block C Seminar Hall", "IEEE Student Branch", 3, None),
+            ("EVT-1007", "NSS Blood Donation Camp", "2026-10-27", "09:00", "14:00", "Open Air Theatre", "NSS Unit", 1, None),
+            ("EVT-1008", "Data Structures Lab Viva - Batch B", "2026-10-27", "14:00", "16:00", "CSE Lab 2", "Department of Computer Science", 1, "EVT-1003"),
+            ("EVT-1009", "Competitive Programming Contest", "2026-10-28", "10:00", "13:00", "CSE Lab 2", "ACM Student Chapter", 2, None),
+            ("EVT-1010", "AI Ethics Panel Discussion", "2026-10-28", "14:00", "16:00", "Main Auditorium", "Department of Computer Science", 2, None),
+            ("EVT-1011", "Cultural Night Dance Auditions", "2026-10-28", "16:30", "19:00", "Open Air Theatre", "Cultural Affairs", 4, None),
+            ("EVT-1012", "Placement Talk: Google Cloud", "2026-10-29", "09:30", "11:30", "Main Auditorium", "Placement Cell", 1, None),
+            ("EVT-1013", "Cybersecurity Capture The Flag", "2026-10-29", "11:00", "15:00", "CSE Lab 2", "ACM Student Chapter", 2, None),
+            ("EVT-1014", "Photography Club Photo Walk", "2026-10-29", "16:00", "18:00", "Open Air Theatre", "Cultural Affairs", 4, None),
+            ("EVT-1015", "Hackathon 24hr Mentor Checkpoint", "2026-10-30", "10:00", "12:00", "Block C Seminar Hall", "ACM Student Chapter", 1, "EVT-1001"),
+            ("EVT-1016", "Open Source Contribution Clinic", "2026-10-30", "13:00", "15:30", "CSE Lab 2", "IEEE Student Branch", 3, None),
+            ("EVT-1017", "Acoustic Jam Session", "2026-10-30", "17:00", "19:30", "Open Air Theatre", "Cultural Affairs", 4, None),
+            ("EVT-1018", "Hackathon Final Presentations", "2026-10-31", "10:00", "13:00", "Main Auditorium", "ACM Student Chapter", 1, "EVT-1015"),
+            ("EVT-1019", "Hackathon Award Ceremony", "2026-10-31", "14:00", "16:00", "Main Auditorium", "ACM Student Chapter", 1, "EVT-1018"),
+            ("EVT-1020", "Campus Cleanup Green Drive", "2026-11-01", "08:00", "11:00", "Open Air Theatre", "NSS Unit", 3, None),
+        ]
+        for eid, name, date, st, et, venue, org, prio, dep in raw_events:
+            sm = date_time_to_minutes(date, st)
+            em = date_time_to_minutes(date, et)
+            cur.execute("""
+                INSERT INTO events (id, name, date, start_time, end_time, start_minute, end_minute, venue, organizer, priority, depends_on, owner_user_id, college)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            """, (eid, name, date, st, et, sm, em, venue, org, prio, dep, user_id, "Karunya Institute of Technology and Sciences"))
+
+        waitlisted = [
+            ("WLT-2001", "EVT-W1", "Cloud Infrastructure Architecture Lab", "2026-10-26", "10:30", "12:30", "CSE Lab 2", "ACM Student Chapter", 1, None),
+            ("WLT-2002", "EVT-W2", "Creative Writing Open Mic Session", "2026-10-27", "15:00", "16:30", "Open Air Theatre", "Literary & Quiz Society", 3, None)
+        ]
+        for wid, eid, name, date, st, et, venue, org, prio, dep in waitlisted:
+            cur.execute("""
+                INSERT INTO waitlist (id, event_id, name, date, start_time, end_time, venue, organizer, priority, depends_on, owner_user_id, created_at, college)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            """, (wid, eid, name, date, st, et, venue, org, prio, dep, user_id, now_str, "Karunya Institute of Technology and Sciences"))
+
+    conn.commit()
+
+
+def seed_vit_account(conn: sqlite3.Connection, pwd_hash: str, salt: bytes, now_str: str) -> None:
+    cur = conn.cursor()
+    user_id = "usr-demo-vit"
+    college = "Vellore Institute of Technology"
+
+    cur.execute("SELECT id FROM users WHERE email = 'vit@chronograph.app'")
+    if not cur.fetchone():
+        cur.execute("""
+            INSERT INTO users (id, full_name, email, password_hash, salt, created_at, college)
+            VALUES (?, ?, ?, ?, ?, ?, ?)
+        """, (user_id, "Dr. Rajesh Kumar", "vit@chronograph.app", pwd_hash, salt, now_str, college))
+
+    cur.execute("SELECT COUNT(*) as cnt FROM events WHERE college = ?", (college,))
+    if cur.fetchone()['cnt'] == 0:
+        raw_events = [
+            ("EVT-V1001", "Riviera 2026 Steering Committee Briefing", "2026-10-26", "09:00", "11:00", "Anna Auditorium", "Cultural Affairs Council", 1, None),
+            ("EVT-V1002", "Placement Drive: Microsoft India Core", "2026-10-26", "10:00", "12:00", "Anna Auditorium", "PAT Placement Center", 1, None),
+            ("EVT-V1003", "Algorithms & Data Structures Lab - Slot L1", "2026-10-26", "13:00", "15:00", "Technology Tower Lab 1", "School of Computer Science", 1, None),
+            ("EVT-V1004", "Gravitas Robotics Arena Hardware Sprint", "2026-10-26", "15:30", "18:00", "SJT Seminar Hall", "Robotics Club", 3, None),
+            ("EVT-V1005", "Cloud Architecture & Kubernetes Sprint", "2026-10-27", "09:30", "11:30", "SJT Seminar Hall", "ACM Student Chapter", 3, None),
+            ("EVT-V1006", "Smart Contract Security & Web3 Audit", "2026-10-27", "11:00", "13:00", "SJT Seminar Hall", "IEEE Computer Society", 3, None),
+            ("EVT-V1007", "Youth Red Cross Blood Donation Camp", "2026-10-27", "09:00", "14:00", "Outdoor Amphitheatre", "Red Cross Society", 1, None),
+            ("EVT-V1008", "Algorithms Lab - Slot L2 Advanced", "2026-10-27", "14:00", "16:00", "Technology Tower Lab 1", "School of Computer Science", 1, "EVT-V1003"),
+            ("EVT-V1009", "Competitive Programming League - Round 1", "2026-10-28", "10:00", "13:00", "Technology Tower Lab 1", "ACM Student Chapter", 2, None),
+            ("EVT-V1010", "Autonomous Robotics & LiDAR Keynote", "2026-10-28", "14:00", "16:00", "Anna Auditorium", "School of Mechanical Engg", 2, None),
+            ("EVT-V1011", "Battle of the Bands Music Prelims", "2026-10-28", "16:30", "19:00", "Outdoor Amphitheatre", "Music Club", 4, None),
+            ("EVT-V1012", "Placement Orientation: Amazon AWS", "2026-10-29", "09:30", "11:30", "Anna Auditorium", "PAT Placement Center", 1, None),
+            ("EVT-V1013", "Cybersecurity Capture The Flag (CTF)", "2026-10-29", "11:00", "15:00", "Technology Tower Lab 1", "IEEE Computer Society", 2, None),
+            ("EVT-V1014", "Photography Walk & Heritage Shoot", "2026-10-29", "16:00", "18:00", "Outdoor Amphitheatre", "Photography Club", 4, None),
+            ("EVT-V1015", "Gravitas 36-hr Hackathon Checkpoint", "2026-10-30", "10:00", "12:00", "SJT Seminar Hall", "Innovation Cell", 1, "EVT-V1004"),
+            ("EVT-V1016", "Open Source Kernel Patching Clinic", "2026-10-30", "13:00", "15:30", "Technology Tower Lab 1", "Open Source Society", 3, None),
+            ("EVT-V1017", "Acoustic Sunset Jam Session", "2026-10-30", "17:00", "19:30", "Outdoor Amphitheatre", "Music Club", 4, None),
+            ("EVT-V1018", "Gravitas Hackathon Grand Presentations", "2026-10-31", "10:00", "13:00", "Anna Auditorium", "Innovation Cell", 1, "EVT-V1015"),
+            ("EVT-V1019", "Gravitas Award Ceremony & Trophies", "2026-10-31", "14:00", "16:00", "Anna Auditorium", "Innovation Cell", 1, "EVT-V1018"),
+            ("EVT-V1020", "Clean Campus Swachhathon Drive", "2026-11-01", "08:00", "11:00", "Outdoor Amphitheatre", "Sports Council", 3, None),
+        ]
+        for eid, name, date, st, et, venue, org, prio, dep in raw_events:
+            sm = date_time_to_minutes(date, st)
+            em = date_time_to_minutes(date, et)
+            cur.execute("""
+                INSERT INTO events (id, name, date, start_time, end_time, start_minute, end_minute, venue, organizer, priority, depends_on, owner_user_id, college)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            """, (eid, name, date, st, et, sm, em, venue, org, prio, dep, user_id, college))
+
+        waitlisted = [
+            ("WLT-V2001", "EVT-VW1", "Quantum Cryptography Masterclass", "2026-10-26", "10:30", "12:30", "Technology Tower Lab 1", "School of Computer Science", 1, None),
+            ("WLT-V2002", "EVT-VW2", "Literary Debate Open Mic", "2026-10-27", "15:00", "16:30", "Outdoor Amphitheatre", "English Literary Club", 3, None)
+        ]
+        for wid, eid, name, date, st, et, venue, org, prio, dep in waitlisted:
+            cur.execute("""
+                INSERT INTO waitlist (id, event_id, name, date, start_time, end_time, venue, organizer, priority, depends_on, owner_user_id, created_at, college)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            """, (wid, eid, name, date, st, et, venue, org, prio, dep, user_id, now_str, college))
+
+    conn.commit()
+
+
+def seed_psg_account(conn: sqlite3.Connection, pwd_hash: str, salt: bytes, now_str: str) -> None:
+    cur = conn.cursor()
+    user_id = "usr-demo-psg"
+    college = "PSG College of Arts and Science"
+
+    cur.execute("SELECT id FROM users WHERE email = 'psg@chronograph.app'")
+    if not cur.fetchone():
+        cur.execute("""
+            INSERT INTO users (id, full_name, email, password_hash, salt, created_at, college)
+            VALUES (?, ?, ?, ?, ?, ?, ?)
+        """, (user_id, "Dr. Ananya Iyer", "psg@chronograph.app", pwd_hash, salt, now_str, college))
+
+    cur.execute("SELECT COUNT(*) as cnt FROM events WHERE college = ?", (college,))
+    if cur.fetchone()['cnt'] == 0:
+        raw_events = [
+            ("EVT-P1001", "Culturals 2026 Inauguration & Welcome", "2026-10-26", "09:00", "11:00", "GRD Auditorium", "Students Union", 1, None),
+            ("EVT-P1002", "Campus Recruitment: Deloitte Advisory", "2026-10-26", "10:00", "12:00", "GRD Auditorium", "Placement Council", 1, None),
+            ("EVT-P1003", "Financial Modeling & Analytics Lab - Batch 1", "2026-10-26", "13:00", "15:00", "Commerce Computer Lab", "Department of Commerce", 1, None),
+            ("EVT-P1004", "State-Level Science Exhibition Setup", "2026-10-26", "15:30", "18:00", "Science Block Seminar Hall", "Physics & Chemistry Dept", 3, None),
+            ("EVT-P1005", "National Budget & Fiscal Policy Symposium", "2026-10-27", "09:30", "11:30", "Science Block Seminar Hall", "Economics Association", 2, None),
+            ("EVT-P1006", "FinTech & Algorithmic Trading Workshop", "2026-10-27", "11:00", "13:00", "Science Block Seminar Hall", "Commerce Forum", 2, None),
+            ("EVT-P1007", "NSS Free Health & Eye Care Camp", "2026-10-27", "09:00", "14:00", "Kalaikarangal Quadrangle", "NSS Unit", 1, None),
+            ("EVT-P1008", "Financial Modeling - Advanced Portfolio Batch", "2026-10-27", "14:00", "16:00", "Commerce Computer Lab", "Department of Commerce", 1, "EVT-P1003"),
+            ("EVT-P1009", "Data Analytics with R Practical Contest", "2026-10-28", "10:00", "13:00", "Commerce Computer Lab", "Computer Applications Dept", 2, None),
+            ("EVT-P1010", "Digital Media & Investigative Journalism Panel", "2026-10-28", "14:00", "16:00", "GRD Auditorium", "Visual Communication Dept", 2, None),
+            ("EVT-P1011", "Bharatanatyam & Classical Dance Prelims", "2026-10-28", "16:30", "19:00", "Kalaikarangal Quadrangle", "Fine Arts Club", 4, None),
+            ("EVT-P1012", "Placement Drive: KPMG Assurance & Tax", "2026-10-29", "09:30", "11:30", "GRD Auditorium", "Placement Council", 1, None),
+            ("EVT-P1013", "UI/UX & Web Prototype Hack", "2026-10-29", "11:00", "15:00", "Commerce Computer Lab", "Computer Science Dept", 2, None),
+            ("EVT-P1014", "Watercolor & Fine Arts Open Exhibition", "2026-10-29", "16:00", "18:00", "Kalaikarangal Quadrangle", "Fine Arts Club", 4, None),
+            ("EVT-P1015", "Science Paper Presentations - Session 1", "2026-10-30", "10:00", "12:00", "Science Block Seminar Hall", "Science Association", 1, "EVT-P1004"),
+            ("EVT-P1016", "Applied Biotechnology Research Showcase", "2026-10-30", "13:00", "15:30", "Commerce Computer Lab", "Biotechnology Dept", 3, None),
+            ("EVT-P1017", "Carnatic Music & Western Acoustic Night", "2026-10-30", "17:00", "19:30", "Kalaikarangal Quadrangle", "Music Association", 4, None),
+            ("EVT-P1018", "Annual Inter-College Cultural Gala", "2026-10-31", "10:00", "13:00", "GRD Auditorium", "Students Union", 1, "EVT-P1001"),
+            ("EVT-P1019", "Culturals Award Distribution & Valedictory", "2026-10-31", "14:00", "16:00", "GRD Auditorium", "Students Union", 1, "EVT-P1018"),
+            ("EVT-P1020", "Rotaract Campus Green Plantation Drive", "2026-11-01", "08:00", "11:00", "Kalaikarangal Quadrangle", "Rotaract Club", 3, None),
+        ]
+        for eid, name, date, st, et, venue, org, prio, dep in raw_events:
+            sm = date_time_to_minutes(date, st)
+            em = date_time_to_minutes(date, et)
+            cur.execute("""
+                INSERT INTO events (id, name, date, start_time, end_time, start_minute, end_minute, venue, organizer, priority, depends_on, owner_user_id, college)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            """, (eid, name, date, st, et, sm, em, venue, org, prio, dep, user_id, college))
+
+        waitlisted = [
+            ("WLT-P2001", "EVT-PW1", "Corporate Taxation Masterclass", "2026-10-26", "10:30", "12:30", "Commerce Computer Lab", "Commerce Dept", 1, None),
+            ("WLT-P2002", "EVT-PW2", "Tamil Literary Debate Prelims", "2026-10-27", "15:00", "16:30", "Kalaikarangal Quadrangle", "Literary Society", 3, None)
+        ]
+        for wid, eid, name, date, st, et, venue, org, prio, dep in waitlisted:
+            cur.execute("""
+                INSERT INTO waitlist (id, event_id, name, date, start_time, end_time, venue, organizer, priority, depends_on, owner_user_id, created_at, college)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            """, (wid, eid, name, date, st, et, venue, org, prio, dep, user_id, now_str, college))
 
     conn.commit()
 
@@ -235,7 +397,7 @@ def seed_demo_account(conn: sqlite3.Connection) -> None:
 def get_user_by_email(email: str) -> Optional[Dict[str, Any]]:
     conn = get_db_connection()
     cur = conn.cursor()
-    cur.execute("SELECT * FROM users WHERE email = ?", (email.strip().lower(),))
+    cur.execute("SELECT id, full_name, email, password_hash, salt, college, created_at FROM users WHERE email = ?", (email.strip().lower(),))
     row = cur.fetchone()
     conn.close()
     return dict(row) if row else None
@@ -244,24 +406,24 @@ def get_user_by_email(email: str) -> Optional[Dict[str, Any]]:
 def get_user_by_id(user_id: str) -> Optional[Dict[str, Any]]:
     conn = get_db_connection()
     cur = conn.cursor()
-    cur.execute("SELECT id, full_name, email, created_at FROM users WHERE id = ?", (user_id,))
+    cur.execute("SELECT id, full_name, email, college, created_at FROM users WHERE id = ?", (user_id,))
     row = cur.fetchone()
     conn.close()
     return dict(row) if row else None
 
 
-def create_user(full_name: str, email: str, password_hash: str, salt: bytes) -> Dict[str, Any]:
+def create_user(full_name: str, email: str, password_hash: str, salt: bytes, college: str = 'Karunya Institute of Technology and Sciences') -> Dict[str, Any]:
     conn = get_db_connection()
     cur = conn.cursor()
     user_id = f"usr-{secrets.token_hex(6)}"
     now_str = datetime.datetime.now().isoformat()
     cur.execute("""
-        INSERT INTO users (id, full_name, email, password_hash, salt, created_at)
-        VALUES (?, ?, ?, ?, ?, ?)
-    """, (user_id, full_name, email.strip().lower(), password_hash, salt, now_str))
+        INSERT INTO users (id, full_name, email, password_hash, salt, created_at, college)
+        VALUES (?, ?, ?, ?, ?, ?, ?)
+    """, (user_id, full_name, email.strip().lower(), password_hash, salt, now_str, college))
     conn.commit()
     conn.close()
-    return {'id': user_id, 'full_name': full_name, 'email': email.strip().lower(), 'created_at': now_str}
+    return {'id': user_id, 'full_name': full_name, 'email': email.strip().lower(), 'college': college, 'created_at': now_str}
 
 
 def create_session(user_id: str) -> str:
@@ -286,7 +448,7 @@ def validate_session(token: str) -> Optional[Dict[str, Any]]:
     cur = conn.cursor()
     now_str = datetime.datetime.now().isoformat()
     cur.execute("""
-        SELECT u.id, u.full_name, u.email, s.token
+        SELECT u.id, u.full_name, u.email, u.college, s.token
         FROM sessions s
         JOIN users u ON s.user_id = u.id
         WHERE s.token = ? AND s.expires_at > ?
@@ -304,22 +466,28 @@ def delete_session(token: str) -> None:
     conn.close()
 
 
-def load_user_events_from_db(user_id: str) -> List[Dict[str, Any]]:
+def load_user_events_from_db(user_id_or_college: str) -> List[Dict[str, Any]]:
     conn = get_db_connection()
     cur = conn.cursor()
-    cur.execute("SELECT * FROM events WHERE owner_user_id = ? ORDER BY start_minute ASC", (user_id,))
+    cur.execute("SELECT * FROM events WHERE college = ? OR owner_user_id = ? ORDER BY start_minute ASC", (user_id_or_college, user_id_or_college))
     rows = cur.fetchall()
     conn.close()
     return [dict(r) for r in rows]
 
 
-def save_event_to_db(event: Dict[str, Any], user_id: str) -> None:
+def save_event_to_db(event: Dict[str, Any], user_id: str, college: Optional[str] = None) -> None:
     conn = get_db_connection()
     try:
+        col = college or event.get('college')
+        if not col:
+            cur = conn.cursor()
+            cur.execute("SELECT college FROM users WHERE id = ?", (user_id,))
+            r = cur.fetchone()
+            col = r['college'] if r and r['college'] else 'Karunya Institute of Technology and Sciences'
         with conn:
             conn.execute("""
-                INSERT INTO events (id, name, date, start_time, end_time, start_minute, end_minute, venue, organizer, priority, depends_on, owner_user_id)
-                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                INSERT INTO events (id, name, date, start_time, end_time, start_minute, end_minute, venue, organizer, priority, depends_on, owner_user_id, college)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                 ON CONFLICT(id) DO UPDATE SET
                     name = excluded.name,
                     date = excluded.date,
@@ -330,49 +498,56 @@ def save_event_to_db(event: Dict[str, Any], user_id: str) -> None:
                     venue = excluded.venue,
                     organizer = excluded.organizer,
                     priority = excluded.priority,
-                    depends_on = excluded.depends_on
+                    depends_on = excluded.depends_on,
+                    college = excluded.college
             """, (
                 event['id'], event['name'], event['date'], event['start_time'], event['end_time'],
                 event['start_minute'], event['end_minute'], event['venue'], event['organizer'],
-                int(event['priority']), event.get('depends_on'), user_id
+                int(event['priority']), event.get('depends_on'), user_id, col
             ))
     finally:
         conn.close()
 
 
-def delete_event_from_db(event_id: str, user_id: str) -> None:
+def delete_event_from_db(event_id: str, user_id_or_college: str) -> None:
     conn = get_db_connection()
     try:
         with conn:
-            conn.execute("DELETE FROM events WHERE id = ? AND owner_user_id = ?", (event_id, user_id))
+            conn.execute("DELETE FROM events WHERE id = ? AND (owner_user_id = ? OR college = ?)", (event_id, user_id_or_college, user_id_or_college))
     finally:
         conn.close()
 
 
-def load_waitlist_from_db(user_id: str) -> List[Dict[str, Any]]:
+def load_waitlist_from_db(user_id_or_college: str) -> List[Dict[str, Any]]:
     conn = get_db_connection()
     try:
         cur = conn.cursor()
-        cur.execute("SELECT * FROM waitlist WHERE owner_user_id = ? ORDER BY priority ASC, created_at ASC", (user_id,))
+        cur.execute("SELECT * FROM waitlist WHERE college = ? OR owner_user_id = ? ORDER BY priority ASC, created_at ASC", (user_id_or_college, user_id_or_college))
         rows = cur.fetchall()
         return [dict(r) for r in rows]
     finally:
         conn.close()
 
 
-def save_waitlist_item_to_db(item: Dict[str, Any], user_id: str) -> None:
+def save_waitlist_item_to_db(item: Dict[str, Any], user_id: str, college: Optional[str] = None) -> None:
     conn = get_db_connection()
     try:
         w_id = item.get('waitlist_id') or f"WLT-{secrets.token_hex(4)}"
         now_str = datetime.datetime.now().isoformat()
+        col = college or item.get('college')
+        if not col:
+            cur = conn.cursor()
+            cur.execute("SELECT college FROM users WHERE id = ?", (user_id,))
+            r = cur.fetchone()
+            col = r['college'] if r and r['college'] else 'Karunya Institute of Technology and Sciences'
         with conn:
             conn.execute("""
-                INSERT OR REPLACE INTO waitlist (id, event_id, name, date, start_time, end_time, venue, organizer, priority, depends_on, owner_user_id, created_at)
-                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                INSERT OR REPLACE INTO waitlist (id, event_id, name, date, start_time, end_time, venue, organizer, priority, depends_on, owner_user_id, created_at, college)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
             """, (
                 w_id, item['id'], item['name'], item['date'], item['start_time'], item['end_time'],
                 item.get('venue', ''), item.get('organizer', ''), int(item.get('priority', 3)),
-                item.get('depends_on'), user_id, now_str
+                item.get('depends_on'), user_id, now_str, col
             ))
     finally:
         conn.close()
@@ -382,25 +557,81 @@ def remove_waitlist_item_from_db(event_id: str, user_id: str) -> None:
     conn = get_db_connection()
     try:
         with conn:
-            conn.execute("DELETE FROM waitlist WHERE (event_id = ? OR id = ?) AND owner_user_id = ?", (event_id, event_id, user_id))
+            conn.execute("DELETE FROM waitlist WHERE (event_id = ? OR id = ?) AND (owner_user_id = ? OR college = ?)", (event_id, event_id, user_id, user_id))
     finally:
         conn.close()
 
 
-def promote_waitlist_to_event(waitlist_id: str, event: Dict[str, Any], user_id: str) -> None:
+def promote_waitlist_to_event(waitlist_id: str, event: Dict[str, Any], user_id: str, college: Optional[str] = None) -> None:
     """Atomically removes waitlist record and creates scheduled event record in one transaction."""
     conn = get_db_connection()
     try:
+        col = college or event.get('college')
+        if not col:
+            cur = conn.cursor()
+            cur.execute("SELECT college FROM users WHERE id = ?", (user_id,))
+            r = cur.fetchone()
+            col = r['college'] if r and r['college'] else 'Karunya Institute of Technology and Sciences'
         with conn:
-            conn.execute("DELETE FROM waitlist WHERE (event_id = ? OR id = ?) AND owner_user_id = ?", (waitlist_id, waitlist_id, user_id))
+            conn.execute("DELETE FROM waitlist WHERE (event_id = ? OR id = ?) AND (owner_user_id = ? OR college = ?)", (waitlist_id, waitlist_id, user_id, col))
             conn.execute("""
-                INSERT INTO events (id, name, date, start_time, end_time, start_minute, end_minute, venue, organizer, priority, depends_on, owner_user_id)
-                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                INSERT INTO events (id, name, date, start_time, end_time, start_minute, end_minute, venue, organizer, priority, depends_on, owner_user_id, college)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
             """, (
                 event['id'], event['name'], event['date'], event['start_time'], event['end_time'],
                 event['start_minute'], event['end_minute'], event['venue'], event['organizer'],
-                int(event['priority']), event.get('depends_on'), user_id
+                int(event['priority']), event.get('depends_on'), user_id, col
             ))
     finally:
         conn.close()
+
+
+def get_venues_for_college(college: str) -> List[str]:
+    """Returns sorted unique venue names for a specific college."""
+    col = college or 'Karunya Institute of Technology and Sciences'
+    conn = get_db_connection()
+    try:
+        cur = conn.cursor()
+        cur.execute("""
+            SELECT DISTINCT name FROM venues
+            WHERE college = ?
+            ORDER BY name ASC
+        """, (col,))
+        rows = cur.fetchall()
+        venues = [r['name'] for r in rows if r['name']]
+        if not venues:
+            venues = DEFAULT_COLLEGE_VENUES.get(col, ['Main Auditorium', 'Seminar Hall', 'Computer Lab'])
+        return venues
+    finally:
+        conn.close()
+
+
+def add_venue_for_college(name: str, college: str, user_id: Optional[str] = None) -> Dict[str, Any]:
+    """Adds a new campus venue for a college."""
+    clean_name = (name or '').strip()
+    if not clean_name:
+        raise ValueError("Venue name cannot be empty")
+    if len(clean_name) > 80:
+        raise ValueError("Venue name must be 80 characters or fewer")
+
+    col = college or 'Karunya Institute of Technology and Sciences'
+    conn = get_db_connection()
+    try:
+        with conn:
+            cur = conn.cursor()
+            cur.execute("SELECT id, name FROM venues WHERE college = ? AND LOWER(name) = LOWER(?)", (col, clean_name))
+            row = cur.fetchone()
+            if row:
+                return {'id': row['id'], 'name': row['name'], 'college': col, 'already_existed': True}
+
+            v_id = f"ven-{secrets.token_hex(6)}"
+            now_ts = datetime.datetime.now().isoformat()
+            conn.execute("""
+                INSERT INTO venues (id, name, college, created_at, created_by_user_id)
+                VALUES (?, ?, ?, ?, ?)
+            """, (v_id, clean_name, col, now_ts, user_id))
+            return {'id': v_id, 'name': clean_name, 'college': col, 'already_existed': False}
+    finally:
+        conn.close()
+
 

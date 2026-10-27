@@ -27,11 +27,13 @@ app.config['SECRET_KEY'] = 'chronograph-secret-25cs306-mp01'
 
 
 # =====================================================================
-# In-Memory DS Engine per User (Rebuilt from SQLite on startup/login)
+# In-Memory DS Engine per College (Rebuilt from SQLite on startup/login)
+# Multi-tenant: Users from the same college share the same engine & events
 # =====================================================================
-class UserEngine:
-    def __init__(self, user_id: str):
-        self.user_id = user_id
+class CollegeEngine:
+    def __init__(self, college: str):
+        self.college = college
+        self.user_id = college  # for backward compatibility
         self.lock = threading.RLock()
         self.avl_tree = AVLTree()
         self.bst_tree = BSTBaseline()
@@ -54,7 +56,7 @@ class UserEngine:
         self.version_stack = VersionStack(init_snap)
 
     def _load_from_db(self) -> None:
-        events = db.load_user_events_from_db(self.user_id)
+        events = db.load_user_events_from_db(self.college)
         for ev in events:
             sm = ev['start_minute']
             em = ev['end_minute']
@@ -63,15 +65,17 @@ class UserEngine:
             self.hash_table.put(ev['id'], ev)
             self.trie.insert(ev['name'], ev['id'])
 
-        waitlist_items = db.load_waitlist_from_db(self.user_id)
+        waitlist_items = db.load_waitlist_from_db(self.college)
         for w in waitlist_items:
             self.waitlist.push(w)
 
-    def add_event(self, event: Dict[str, Any], record_version: bool = True) -> None:
+    def add_event(self, event: Dict[str, Any], user_id: Optional[str] = None, record_version: bool = True) -> None:
         sm = event['start_minute']
         em = event['end_minute']
+        uid = user_id or event.get('owner_user_id') or self.user_id
+        event['college'] = self.college
         # Persist to SQLite first; in-memory indexes update only upon successful commit
-        db.save_event_to_db(event, self.user_id)
+        db.save_event_to_db(event, uid, college=self.college)
         self.avl_tree = self.avl_tree.insert(event, sm, em)
         self.bst_tree = self.bst_tree.insert(event, sm, em)
         self.hash_table.put(event['id'], event)
@@ -86,11 +90,13 @@ class UserEngine:
                 waitlist=self.waitlist.snapshot()
             )
 
-    def update_event(self, old_event: Dict[str, Any], new_event: Dict[str, Any], record_version: bool = True) -> None:
+    def update_event(self, old_event: Dict[str, Any], new_event: Dict[str, Any], user_id: Optional[str] = None, record_version: bool = True) -> None:
         sm = new_event['start_minute']
         em = new_event['end_minute']
+        uid = user_id or new_event.get('owner_user_id') or self.user_id
+        new_event['college'] = self.college
         # Persist to SQLite first
-        db.save_event_to_db(new_event, self.user_id)
+        db.save_event_to_db(new_event, uid, college=self.college)
 
         # Update in-memory structures atomically
         self.avl_tree = self.avl_tree.delete(old_event['id'], old_event['start_minute'])
@@ -116,7 +122,7 @@ class UserEngine:
             return None
 
         # Remove from SQLite first
-        db.delete_event_from_db(ev['id'], self.user_id)
+        db.delete_event_from_db(ev['id'], self.college)
 
         # Remove from in-memory structures
         self.avl_tree = self.avl_tree.delete(ev['id'], ev['start_minute'])
@@ -144,9 +150,10 @@ class UserEngine:
                         placed_event['end_time'] = cand_et
                         placed_event['start_minute'] = ev['start_minute']
                         placed_event['end_minute'] = test_end
+                        placed_event['college'] = self.college
 
                         # Atomic DB promotion
-                        db.promote_waitlist_to_event(cand.get('waitlist_id') or cand['id'], placed_event, self.user_id)
+                        db.promote_waitlist_to_event(cand.get('waitlist_id') or cand['id'], placed_event, ev.get('owner_user_id') or self.user_id, college=self.college)
                         self.waitlist.remove_by_id(cand['id'])
                         self.avl_tree = self.avl_tree.insert(placed_event, placed_event['start_minute'], placed_event['end_minute'])
                         self.bst_tree = self.bst_tree.insert(placed_event, placed_event['start_minute'], placed_event['end_minute'])
@@ -165,15 +172,27 @@ class UserEngine:
         return auto_placed
 
 
-USER_ENGINES: Dict[str, UserEngine] = {}
+UserEngine = CollegeEngine
+USER_ENGINES: Dict[str, CollegeEngine] = {}
 ENGINE_LOCK = threading.Lock()
 
 
-def get_user_engine(user_id: str) -> UserEngine:
+def get_user_engine(user_or_id: Any) -> CollegeEngine:
     with ENGINE_LOCK:
-        if user_id not in USER_ENGINES:
-            USER_ENGINES[user_id] = UserEngine(user_id)
-        return USER_ENGINES[user_id]
+        if isinstance(user_or_id, dict):
+            college = user_or_id.get('college') or 'Karunya Institute of Technology and Sciences'
+        elif isinstance(user_or_id, str):
+            if user_or_id.startswith('usr-'):
+                u = db.get_user_by_id(user_or_id)
+                college = (u.get('college') if u else None) or 'Karunya Institute of Technology and Sciences'
+            else:
+                college = user_or_id
+        else:
+            college = 'Karunya Institute of Technology and Sciences'
+
+        if college not in USER_ENGINES:
+            USER_ENGINES[college] = CollegeEngine(college)
+        return USER_ENGINES[college]
 
 
 # =====================================================================
@@ -213,6 +232,15 @@ def signup():
     full_name = (data.get('full_name') or '').strip()
     email = (data.get('email') or '').strip().lower()
     password = data.get('password') or ''
+    college = (data.get('college') or 'Karunya Institute of Technology and Sciences').strip()
+
+    VALID_COLLEGES = [
+        'Karunya Institute of Technology and Sciences',
+        'Vellore Institute of Technology',
+        'PSG College of Arts and Science'
+    ]
+    if college not in VALID_COLLEGES:
+        college = 'Karunya Institute of Technology and Sciences'
 
     if len(full_name) < 2 or len(full_name) > 60:
         return jsonify({'ok': False, 'data': None, 'error': 'Name must be between 2 and 60 characters'}), 400
@@ -228,7 +256,7 @@ def signup():
         return jsonify({'ok': False, 'data': None, 'error': 'Email already registered'}), 400
 
     pwd_hash, salt = db.hash_password(password)
-    user = db.create_user(full_name, email, pwd_hash, salt)
+    user = db.create_user(full_name, email, pwd_hash, salt, college=college)
     token = db.create_session(user['id'])
 
     resp = make_response(jsonify({'ok': True, 'data': user, 'error': None}))
@@ -250,7 +278,8 @@ def signin():
     user_data = {
         'id': user_row['id'],
         'full_name': user_row['full_name'],
-        'email': user_row['email']
+        'email': user_row['email'],
+        'college': user_row.get('college') or 'Karunya Institute of Technology and Sciences'
     }
     resp = make_response(jsonify({'ok': True, 'data': user_data, 'error': None}))
     resp.set_cookie('session_token', token, httponly=True, samesite='Lax', max_age=7 * 24 * 3600)
@@ -273,6 +302,38 @@ def get_me():
     if not user:
         return jsonify({'ok': False, 'data': None, 'error': 'Not authenticated'}), 401
     return jsonify({'ok': True, 'data': user, 'error': None})
+
+
+# =====================================================================
+# Venues Endpoints
+# =====================================================================
+@app.route('/api/venues', methods=['GET'])
+def list_venues():
+    user = get_current_user()
+    college = (user.get('college') if user else None) or request.args.get('college') or 'Karunya Institute of Technology and Sciences'
+    venues = db.get_venues_for_college(college)
+    return jsonify({'ok': True, 'data': venues, 'error': None})
+
+
+@app.route('/api/venues', methods=['POST'])
+def create_venue():
+    user, err = require_auth()
+    if err:
+        return err
+
+    data = request.get_json() or {}
+    venue_name = (data.get('name') or '').strip()
+    if not venue_name:
+        return jsonify({'ok': False, 'data': None, 'error': 'Venue name is required'}), 400
+
+    college = user.get('college') or 'Karunya Institute of Technology and Sciences'
+    try:
+        res = db.add_venue_for_college(venue_name, college, user_id=user['id'])
+        return jsonify({'ok': True, 'data': res, 'error': None}), 201
+    except ValueError as e:
+        return jsonify({'ok': False, 'data': None, 'error': str(e)}), 400
+    except Exception as e:
+        return jsonify({'ok': False, 'data': None, 'error': 'Failed to add venue'}), 500
 
 
 # =====================================================================
@@ -410,10 +471,15 @@ def create_event():
             'organizer': organizer,
             'priority': priority,
             'depends_on': depends_on,
-            'owner_user_id': user['id']
+            'owner_user_id': user['id'],
+            'college': engine.college
         }
 
-        engine.add_event(new_event)
+        engine.add_event(new_event, user_id=user['id'])
+        try:
+            db.add_venue_for_college(venue, engine.college, user_id=user['id'])
+        except Exception:
+            pass
         return jsonify({'ok': True, 'data': new_event, 'error': None}), 201
 
 
@@ -529,10 +595,15 @@ def update_event(event_id: str):
             'organizer': organizer,
             'priority': priority,
             'depends_on': depends_on,
-            'owner_user_id': user['id']
+            'owner_user_id': user['id'],
+            'college': engine.college
         }
 
-        engine.update_event(old_event, new_event)
+        engine.update_event(old_event, new_event, user_id=user['id'])
+        try:
+            db.add_venue_for_college(venue, engine.college, user_id=user['id'])
+        except Exception:
+            pass
         return jsonify({'ok': True, 'data': new_event, 'error': None})
 
 
@@ -715,8 +786,9 @@ def reschedule_commit(event_id: str):
         new_event['end_time'] = new_et
         new_event['start_minute'] = new_start_min
         new_event['end_minute'] = new_end_min
+        new_event['college'] = engine.college
 
-        engine.update_event(curr_event, new_event, record_version=True)
+        engine.update_event(curr_event, new_event, user_id=user['id'], record_version=True)
         return jsonify({'ok': True, 'data': new_event, 'error': None})
 
 
@@ -904,12 +976,12 @@ def handle_undo():
         conn = db.get_db_connection()
         try:
             with conn:
-                conn.execute("DELETE FROM events WHERE owner_user_id = ?", (user['id'],))
+                conn.execute("DELETE FROM events WHERE college = ? OR owner_user_id = ?", (engine.college, user['id']))
                 for ev in snap.hash_table.values():
                     conn.execute("""
-                        INSERT INTO events (id, name, date, start_time, end_time, start_minute, end_minute, venue, organizer, priority, depends_on, owner_user_id)
-                        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-                    """, (ev['id'], ev['name'], ev['date'], ev['start_time'], ev['end_time'], ev['start_minute'], ev['end_minute'], ev['venue'], ev['organizer'], ev['priority'], ev.get('depends_on'), user['id']))
+                        INSERT INTO events (id, name, date, start_time, end_time, start_minute, end_minute, venue, organizer, priority, depends_on, owner_user_id, college)
+                        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                    """, (ev['id'], ev['name'], ev['date'], ev['start_time'], ev['end_time'], ev['start_minute'], ev['end_minute'], ev['venue'], ev['organizer'], ev['priority'], ev.get('depends_on'), user['id'], engine.college))
         finally:
             conn.close()
 
@@ -950,12 +1022,12 @@ def handle_redo():
         conn = db.get_db_connection()
         try:
             with conn:
-                conn.execute("DELETE FROM events WHERE owner_user_id = ?", (user['id'],))
+                conn.execute("DELETE FROM events WHERE college = ? OR owner_user_id = ?", (engine.college, user['id']))
                 for ev in snap.hash_table.values():
                     conn.execute("""
-                        INSERT INTO events (id, name, date, start_time, end_time, start_minute, end_minute, venue, organizer, priority, depends_on, owner_user_id)
-                        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-                    """, (ev['id'], ev['name'], ev['date'], ev['start_time'], ev['end_time'], ev['start_minute'], ev['end_minute'], ev['venue'], ev['organizer'], ev['priority'], ev.get('depends_on'), user['id']))
+                        INSERT INTO events (id, name, date, start_time, end_time, start_minute, end_minute, venue, organizer, priority, depends_on, owner_user_id, college)
+                        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                    """, (ev['id'], ev['name'], ev['date'], ev['start_time'], ev['end_time'], ev['start_minute'], ev['end_minute'], ev['venue'], ev['organizer'], ev['priority'], ev.get('depends_on'), user['id'], engine.college))
         finally:
             conn.close()
 
@@ -1009,6 +1081,7 @@ def add_to_waitlist():
     depends_on = data.get('depends_on') or None
 
     item_id = f"EVT-W{random.randint(100, 999)}"
+    engine = get_user_engine(user['id'])
     item = {
         'id': item_id,
         'waitlist_id': f"WLT-{secrets.token_hex(4)}",
@@ -1019,12 +1092,12 @@ def add_to_waitlist():
         'venue': venue,
         'organizer': organizer,
         'priority': priority,
-        'depends_on': depends_on
+        'depends_on': depends_on,
+        'college': engine.college
     }
 
-    engine = get_user_engine(user['id'])
     engine.waitlist.push(item)
-    db.save_waitlist_item_to_db(item, user['id'])
+    db.save_waitlist_item_to_db(item, user['id'], college=engine.college)
 
     return jsonify({'ok': True, 'data': item, 'error': None}), 201
 

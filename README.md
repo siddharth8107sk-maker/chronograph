@@ -15,6 +15,7 @@ The system demonstrates:
 - Rigorous empirical comparison against a baseline **Unbalanced Binary Search Tree (BST)** under random, sorted, and reverse-sorted distributions.
 - Persistence via SQLite with ACID transactional safety and in-memory synchronization.
 - Thread-safe request handling with concurrency protection against check-then-commit race conditions.
+- Institutional multi-tenancy with campus isolation across colleges (Karunya, VIT, PSG) and synchronized schedule engines.
 - Rich algorithmic extensions: Separate-chaining Hash Table, Prefix Trie, Min-Heap Waitlist, Version Stack (multi-level undo/redo), and Conflict-Ripple Graph (BFS ripple, graph coloring, Kahn's topological sort).
 
 > [!NOTE]
@@ -26,7 +27,7 @@ The system demonstrates:
 
 - **Backend:** Python 3.10+ (Standard Library: `sqlite3`, `hashlib`, `secrets`, `threading`, `time`, `statistics`).
 - **Web Framework:** Flask (Lightweight routing, session management, JSON REST API).
-- **Testing Framework:** `pytest` (26 automated test suites covering invariants, scheduling, APIs, and concurrency).
+- **Testing Framework:** `pytest` (29 automated test suites covering invariants, scheduling, APIs, multi-tenancy, venues, and concurrency).
 - **Database:** SQLite 3 with foreign key enforcement and transactional rollbacks.
 - **Frontend:** Single-page application (`templates/index.html`) using Vanilla HTML5, CSS3, SVG visualizers, and JavaScript.
 
@@ -58,7 +59,7 @@ chronograph/
     ├── __init__.py
     ├── test_avl_tree.py       # AVL rotations (LL, RR, LR, RL), invariants, deletions, augmentations
     ├── test_scheduling.py     # Interval boundaries [A, B), self-conflict exclusion, waitlist placement
-    └── test_api_and_consistency.py # REST API status codes (400, 404, 409), DB rollback, concurrency
+    └── test_api_and_consistency.py # REST API status codes (400, 404, 409), DB rollback, concurrency, multi-tenancy, campus venues
 ```
 
 ---
@@ -149,9 +150,17 @@ Open your browser and visit:
 http://127.0.0.1:5000
 ```
 
-**Default Demo Credentials:**
-- **Email:** `demo@chronograph.app`
-- **Password:** `Demo@1234`
+**Multi-Tenant College Demo Accounts:**
+ChronoGraph features institutional multi-tenancy. Select or log in with any of the three pre-seeded college accounts (all passwords `Demo@1234`):
+
+| College | Demo Email | Faculty Lead | Seeded Dataset |
+| :--- | :--- | :--- | :--- |
+| **Karunya Institute of Technology and Sciences** | `karunya@chronograph.app` (or `demo@chronograph.app`) | Prof. Sarah Jenkins | 20+ events, 2 waitlist items, CSE labs, Hackathon, Placement drives |
+| **Vellore Institute of Technology** | `vit@chronograph.app` | Dr. Rajesh Kumar | 20 events, 2 waitlist items, Riviera fest, Gravitas hackathon, AWS drive |
+| **PSG College of Arts and Science** | `psg@chronograph.app` | Dr. Ananya Iyer | 20 events, 2 waitlist items, Culturals, Science expo, FinTech labs |
+
+> [!TIP]
+> On the Sign In page, click any of the 3 college quick-login buttons to instantly authenticate into that institution's dashboard! Users registered under the same college share synchronized AVL trees, conflict ripple graphs, and waitlists.
 
 ---
 
@@ -162,7 +171,7 @@ Execute the dedicated pytest suite:
 ```bash
 pytest tests/ -v
 ```
-All 26 tests cover:
+All 29 tests cover:
 - AVL rotations (LL, RR, LR, RL)
 - Duplicate key ordering
 - Leaf, single-child, and two-child deletions
@@ -170,6 +179,9 @@ All 26 tests cover:
 - Boundary conditions and interval rules
 - HTTP status codes (200, 201, 400, 404, 409)
 - Concurrency race condition prevention
+- College registration, multi-tenancy isolation, and cross-user shared schedules
+- Pre-seeded multi-college demo account authentication and data isolation
+- Custom campus venue creation, real-time sharing across peers of the same college, and cross-institution venue isolation
 
 ### 7.2 Running the Benchmarks
 To execute the empirical AVL vs. BST benchmark suite:
@@ -313,9 +325,50 @@ python benchmark.py
 }
 ```
 
+### 9.4 Campus Venue Management
+- **List Venues (`GET /api/venues`):** Returns all default and custom campus venues registered for the authenticated user's institution.
+- **Add Venue (`POST /api/venues`):**
+```json
+{
+  "name": "IoT Innovation Center"
+}
+```
+- **Response (201 Created):**
+```json
+{
+  "ok": true,
+  "data": {
+    "name": "IoT Innovation Center",
+    "college": "Karunya Institute of Technology and Sciences",
+    "is_custom": true
+  },
+  "error": null
+}
+```
+
+### 9.5 Empirical Benchmark Suite
+- **Endpoint:** `GET /api/benchmark?suite=tree|search|sort|slot`
+- **Optional Fresh Evaluation:** Append `&fresh=1` to re-execute empirical evaluations dynamically on the server.
+- **Response (200 OK):**
+```json
+{
+  "ok": true,
+  "data": {
+    "suite": "tree",
+    "results": {
+      "sizes": [100, 500, 1000, 2000, 5000],
+      "patterns": ["random", "sorted", "reverse_sorted", "zigzag"],
+      "data": { ... }
+    },
+    "conclusion": "On adversarial sorted input, the BST degraded to height 5000 (O(n)), while the persistent AVL tree maintained strict logarithmic height (13)..."
+  },
+  "error": null
+}
+```
+
 ---
 
 ## 10. Known Limitations
 
-1. **In-Memory Scale:** In-memory AVL trees and version stacks are loaded per user. For massive datasets exceeding tens of millions of records per user, paginated disk-backed B-trees would be preferred over in-memory AVL nodes.
+1. **In-Memory Scale:** In-memory AVL trees and version stacks are loaded per institution (`CollegeEngine`). For massive datasets exceeding tens of millions of records per institution, paginated disk-backed B-trees would be preferred over in-memory AVL nodes.
 2. **Soft Real-Time Scope:** Execution runs within the Python runtime and Flask WSGI loop. While response times are sub-millisecond, it does not guarantee hard real-time hardware execution deadlines.
